@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from pathlib import Path
 
 import voluptuous as vol
 
@@ -32,6 +33,17 @@ from .storage import RecipeStorage
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["sensor", "select", "button"]
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Register static path for integration icons."""
+    component_dir = Path(__file__).parent
+    hass.http.register_static_path(
+        f"/brands/icon/{DOMAIN}",
+        str(component_dir),
+        cache_headers=False,
+    )
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
