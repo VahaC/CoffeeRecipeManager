@@ -34,16 +34,70 @@
   "options": {
     "step": {
       "init": {
-        "title": "Coffee Recipe Manager Settings",
+        "title": "Coffee Recipe Manager",
+        "menu_options": {
+          "machine_settings": "Machine settings",
+          "recipes_menu": "Manage recipes"
+        }
+      },
+      "machine_settings": {
+        "title": "Machine Settings",
         "data": {
           "machine_drink_select": "Drink select entity",
           "machine_start_switch": "Start switch entity",
           "machine_work_state": "Work state sensor entity",
           "machine_double_switch": "Double shot switch",
           "fault_sensors": "Fault sensors",
-          "notify_service": "Mobile notification service"
+          "notify_service": "Mobile notification service (or 'none')"
+        }
+      },
+      "recipes_menu": {
+        "title": "Recipe Management",
+        "menu_options": {
+          "recipe_add": "Add new recipe",
+          "recipe_edit_select": "Edit recipe",
+          "recipe_delete_select": "Delete recipe"
+        }
+      },
+      "recipe_add": {
+        "title": "Add Recipe",
+        "description": "Define the recipe name and its steps.\n\nEach step is an object with:\n- `drink` (required) — e.g. `Espresso`, `Americano`, `Cappuccino`\n- `double` (optional, default `false`)\n- `timeout` (optional, default `300` seconds)",
+        "data": {
+          "name": "Recipe name",
+          "description": "Description (optional)",
+          "steps": "Steps"
+        }
+      },
+      "recipe_edit_select": {
+        "title": "Edit Recipe — Select",
+        "description": "Choose which recipe to edit.",
+        "data": {
+          "recipe_key": "Recipe"
+        }
+      },
+      "recipe_edit": {
+        "title": "Edit Recipe: {recipe_key}",
+        "description": "Modify the recipe name, description and steps.\n\nEach step: `drink` (required), `double` (optional), `timeout` (optional seconds).",
+        "data": {
+          "name": "Recipe name",
+          "description": "Description (optional)",
+          "steps": "Steps"
+        }
+      },
+      "recipe_delete_select": {
+        "title": "Delete Recipe",
+        "description": "Select a recipe to permanently delete.",
+        "data": {
+          "recipe_key": "Recipe to delete"
         }
       }
+    },
+    "error": {
+      "recipe_save_failed": "Failed to save recipe — check the steps format.",
+      "steps_invalid": "Steps must be a non-empty list of objects."
+    },
+    "abort": {
+      "no_recipes": "No recipes found. Add one first."
     }
   }
 }

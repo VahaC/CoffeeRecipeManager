@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 import voluptuous as vol
@@ -156,13 +157,50 @@ class CoffeeRecipeManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return CoffeeRecipeManagerOptionsFlow(config_entry)
 
 
+_DEFAULT_STEPS_EXAMPLE = [
+    {"drink": "Espresso", "double": False, "timeout": 300},
+]
+
+
 class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
     """Handle options for Coffee Recipe Manager."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._config_entry = config_entry
+        self._edit_key: str | None = None
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _get_storage(self):
+        return self.hass.data[DOMAIN][self._config_entry.entry_id]["storage"]
+
+    def _recipe_options(self) -> list[selector.SelectOptionDict]:
+        storage = self._get_storage()
+        return [
+            selector.SelectOptionDict(value=key, label=f"{data['name']} ({key})")
+            for key, data in storage.recipes.items()
+        ]
+
+    # ------------------------------------------------------------------
+    # Root menu
+    # ------------------------------------------------------------------
 
     async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Root menu: machine settings or recipe management."""
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=["machine_settings", "recipes_menu"],
+        )
+
+    # ------------------------------------------------------------------
+    # Machine settings
+    # ------------------------------------------------------------------
+
+    async def async_step_machine_settings(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
         """Options: update machine settings."""
@@ -208,4 +246,149 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
             ): str,
         })
 
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(step_id="machine_settings", data_schema=schema)
+
+    # ------------------------------------------------------------------
+    # Recipe management menu
+    # ------------------------------------------------------------------
+
+    async def async_step_recipes_menu(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Recipe sub-menu: add / edit / delete."""
+        return self.async_show_menu(
+            step_id="recipes_menu",
+            menu_options=["recipe_add", "recipe_edit_select", "recipe_delete_select"],
+        )
+
+    # ------------------------------------------------------------------
+    # Add recipe
+    # ------------------------------------------------------------------
+
+    async def async_step_recipe_add(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Form: add a new recipe."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            storage = self._get_storage()
+            name = user_input["name"].strip()
+            key = re.sub(r"[^a-z0-9_]", "_", name.lower()).strip("_")
+            steps = user_input.get("steps", _DEFAULT_STEPS_EXAMPLE)
+
+            if not isinstance(steps, list) or not steps:
+                errors["steps"] = "steps_invalid"
+            else:
+                recipe = {
+                    "name": name,
+                    "description": user_input.get("description", ""),
+                    "steps": steps,
+                }
+                success = await storage.save_recipe(key, recipe)
+                if success:
+                    return self.async_create_entry(title="", data={})
+                errors["base"] = "recipe_save_failed"
+
+        schema = vol.Schema({
+            vol.Required("name"): selector.TextSelector(),
+            vol.Optional("description", default=""): selector.TextSelector(),
+            vol.Required("steps", default=_DEFAULT_STEPS_EXAMPLE): selector.ObjectSelector(),
+        })
+
+        return self.async_show_form(
+            step_id="recipe_add",
+            data_schema=schema,
+            errors=errors,
+        )
+
+    # ------------------------------------------------------------------
+    # Edit recipe
+    # ------------------------------------------------------------------
+
+    async def async_step_recipe_edit_select(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Select which recipe to edit."""
+        options = self._recipe_options()
+        if not options:
+            return self.async_abort(reason="no_recipes")
+
+        if user_input is not None:
+            self._edit_key = user_input["recipe_key"]
+            return await self.async_step_recipe_edit()
+
+        schema = vol.Schema({
+            vol.Required("recipe_key"): selector.SelectSelector(
+                selector.SelectSelectorConfig(options=options)
+            ),
+        })
+
+        return self.async_show_form(step_id="recipe_edit_select", data_schema=schema)
+
+    async def async_step_recipe_edit(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Form: edit the selected recipe."""
+        storage = self._get_storage()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            name = user_input["name"].strip()
+            steps = user_input.get("steps", [])
+
+            if not isinstance(steps, list) or not steps:
+                errors["steps"] = "steps_invalid"
+            else:
+                recipe = {
+                    "name": name,
+                    "description": user_input.get("description", ""),
+                    "steps": steps,
+                }
+                success = await storage.save_recipe(self._edit_key, recipe)
+                if success:
+                    return self.async_create_entry(title="", data={})
+                errors["base"] = "recipe_save_failed"
+
+        existing = storage.get_recipe(self._edit_key) or {}
+        schema = vol.Schema({
+            vol.Required("name", default=existing.get("name", "")): selector.TextSelector(),
+            vol.Optional("description", default=existing.get("description", "")): selector.TextSelector(),
+            vol.Required("steps", default=existing.get("steps", _DEFAULT_STEPS_EXAMPLE)): selector.ObjectSelector(),
+        })
+
+        return self.async_show_form(
+            step_id="recipe_edit",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={"recipe_key": self._edit_key},
+        )
+
+    # ------------------------------------------------------------------
+    # Delete recipe
+    # ------------------------------------------------------------------
+
+    async def async_step_recipe_delete_select(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Select and delete a recipe."""
+        options = self._recipe_options()
+        if not options:
+            return self.async_abort(reason="no_recipes")
+
+        if user_input is not None:
+            storage = self._get_storage()
+            await storage.delete_recipe(user_input["recipe_key"])
+            return self.async_create_entry(title="", data={})
+
+        schema = vol.Schema({
+            vol.Required("recipe_key"): selector.SelectSelector(
+                selector.SelectSelectorConfig(options=options)
+            ),
+        })
+
+        return self.async_show_form(
+            step_id="recipe_delete_select",
+            data_schema=schema,
+            description_placeholders={},
+        )

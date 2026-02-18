@@ -157,7 +157,7 @@ class RecipeExecutor:
             self._cleanup()
 
     async def _execute_step(self, step: dict) -> bool:
-        """Execute one step. Returns True if ok, False if failed/aborted."""
+        """Execute one step with automatic fault-wait-resume. Returns True if ok."""
         drink = step.get("drink")
         double = step.get("double", False)
         timeout = step.get("timeout", DEFAULT_STEP_TIMEOUT)
@@ -166,50 +166,67 @@ class RecipeExecutor:
             _LOGGER.warning("Step has no 'drink' field, skipping: %s", step)
             return True
 
-        # 1. Check faults BEFORE starting
-        fault = self._get_active_fault()
-        if fault:
-            await self._fail(f"Fault before step: {fault}")
-            return False
+        while True:
+            if self._abort_event.is_set():
+                self._set_status(EXECUTOR_IDLE)
+                return False
 
-        # 2. Select drink
-        drink_entity = self.config["machine_drink_select"]
-        await self.hass.services.async_call(
-            "select", "select_option",
-            {"entity_id": drink_entity, "option": drink},
-            blocking=True,
-        )
+            # 1. Check faults BEFORE starting — wait until cleared
+            fault = self._get_active_fault()
+            if fault:
+                cleared = await self._wait_for_fault_clear(fault)
+                if not cleared:
+                    return False
+                continue
 
-        # 3. Set double if needed
-        double_entity = self.config.get("machine_double_switch")
-        if double_entity:
-            service = "turn_on" if double else "turn_off"
+            # 2. Select drink
+            drink_entity = self.config["machine_drink_select"]
             await self.hass.services.async_call(
-                "switch", service,
-                {"entity_id": double_entity},
+                "select", "select_option",
+                {"entity_id": drink_entity, "option": drink},
                 blocking=True,
             )
 
-        # Small delay to let machine accept settings
-        await asyncio.sleep(1)
+            # 3. Set double if needed
+            double_entity = self.config.get("machine_double_switch")
+            if double_entity:
+                service = "turn_on" if double else "turn_off"
+                await self.hass.services.async_call(
+                    "switch", service,
+                    {"entity_id": double_entity},
+                    blocking=True,
+                )
 
-        # 4. Start
-        start_entity = self.config["machine_start_switch"]
-        await self.hass.services.async_call(
-            "switch", "turn_on",
-            {"entity_id": start_entity},
-            blocking=True,
-        )
+            # Small delay to let machine accept settings
+            await asyncio.sleep(1)
 
-        # 5. Wait for standby OR fault OR abort
-        result = await self._wait_for_completion(timeout)
-        return result
+            # 4. Start
+            start_entity = self.config["machine_start_switch"]
+            await self.hass.services.async_call(
+                "switch", "turn_on",
+                {"entity_id": start_entity},
+                blocking=True,
+            )
 
-    async def _wait_for_completion(self, timeout: int) -> bool:
+            # 5. Wait for standby OR fault OR abort
+            result = await self._wait_for_completion(timeout)
+
+            if result == "ok":
+                return True
+            elif result == "retry":
+                _LOGGER.info(
+                    "Recipe '%s' step %d: fault cleared, restarting step",
+                    self._current_recipe, self._current_step,
+                )
+                continue
+            else:  # "abort" or "timeout"
+                return False
+
+    async def _wait_for_completion(self, timeout: int) -> str:
         """
         Wait until machine returns to standby.
         Monitors: work_state -> standby, any fault sensor, abort event.
-        Returns True if completed ok.
+        Returns: "ok" | "abort" | "timeout" | "retry" (fault was cleared, retry step).
         """
         work_state_entity = self.config["machine_work_state"]
         standby_value = self.config.get("standby_state", DEFAULT_STANDBY_STATE)
@@ -243,13 +260,13 @@ class RecipeExecutor:
             # Also check current state immediately (machine may already be standby)
             current = self.hass.states.get(work_state_entity)
             if current and current.state == standby_value:
-                return True
+                return "ok"
 
             # Check faults immediately
             fault = self._get_active_fault()
             if fault:
-                await self._fail(f"Fault detected: {fault}")
-                return False
+                cleared = await self._wait_for_fault_clear(fault)
+                return "retry" if cleared else "abort"
 
             # Wait with timeout
             abort_task = self.hass.async_create_task(self._abort_event.wait())
@@ -265,19 +282,85 @@ class RecipeExecutor:
                 t.cancel()
 
             if not done:
-                # Timeout
                 await self._fail(f"Timeout after {timeout}s waiting for machine")
-                return False
+                return "timeout"
 
             if self._abort_event.is_set():
                 self._set_status(EXECUTOR_IDLE)
-                return False
+                return "abort"
 
             if fault_detected:
                 fault_msg = ", ".join(fault_detected)
-                await self._fail(f"Fault during brewing: {fault_msg}")
+                cleared = await self._wait_for_fault_clear(fault_msg)
+                return "retry" if cleared else "abort"
+
+            return "ok"
+
+        finally:
+            unsub()
+
+    async def _wait_for_fault_clear(self, fault_description: str) -> bool:
+        """
+        Pause recipe execution and wait until all fault sensors turn off.
+        Sends a notification to the user. Returns True when cleared, False if aborted.
+        """
+        _LOGGER.warning(
+            "Recipe '%s' paused at step %d/%d — fault: %s. Waiting for resolution...",
+            self._current_recipe, self._current_step, self._total_steps, fault_description,
+        )
+        self._set_status(EXECUTOR_WAITING_FAULT_CLEAR)
+
+        await self._notify(
+            f"⚠️ Recipe paused: {self._current_recipe}\n"
+            f"Step {self._current_step}/{self._total_steps}\n"
+            f"Fault: {fault_description}\n"
+            f"Fix the issue and brewing will resume automatically."
+        )
+
+        fault_sensors = self.config.get("fault_sensors", [])
+        clear_event = asyncio.Event()
+
+        @callback
+        def _fault_clear_listener(event):
+            # Fire the event only when all faults are gone
+            if not self._get_active_fault():
+                clear_event.set()
+
+        unsub = async_track_state_change_event(
+            self.hass, fault_sensors, _fault_clear_listener
+        )
+
+        try:
+            # Already clear?
+            if not self._get_active_fault():
+                return True
+
+            abort_task = self.hass.async_create_task(self._abort_event.wait())
+            clear_task = self.hass.async_create_task(clear_event.wait())
+
+            done, pending = await asyncio.wait(
+                [abort_task, clear_task],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            for t in pending:
+                t.cancel()
+
+            if self._abort_event.is_set():
                 return False
 
+            # Fault cleared — small delay then resume
+            _LOGGER.info(
+                "Fault cleared for recipe '%s' step %d, resuming in 2s...",
+                self._current_recipe, self._current_step,
+            )
+            await asyncio.sleep(2)
+            self._set_status(EXECUTOR_RUNNING)
+
+            await self._notify(
+                f"✅ Fault resolved. Resuming recipe: {self._current_recipe}\n"
+                f"Step {self._current_step}/{self._total_steps}"
+            )
             return True
 
         finally:
