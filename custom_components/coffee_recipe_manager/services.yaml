@@ -1,0 +1,62 @@
+brew_recipe:
+  name: Brew Recipe
+  description: Start brewing a custom coffee recipe
+  fields:
+    recipe_name:
+      name: Recipe Name
+      description: The key name of the recipe (as defined in coffee_recipes.yaml)
+      required: true
+      example: "macchiato_americano"
+      selector:
+        text:
+
+abort_recipe:
+  name: Abort Recipe
+  description: Stop the currently running recipe
+
+reload_recipes:
+  name: Reload Recipes
+  description: Reload recipes from the YAML file (after manual edits)
+
+add_recipe:
+  name: Add Recipe
+  description: Add or update a recipe via service call
+  fields:
+    name:
+      name: Recipe Name
+      description: Human-readable name for the recipe
+      required: true
+      example: "My Morning Coffee"
+      selector:
+        text:
+    description:
+      name: Description
+      description: Optional description
+      example: "Starts with macchiato, ends with americano"
+      selector:
+        text:
+    steps:
+      name: Steps
+      description: List of steps. Each step has drink, double (optional), timeout (optional)
+      required: true
+      example:
+        - drink: LatteMacchiato
+          double: false
+          timeout: 300
+        - drink: Americano
+          double: false
+          timeout: 300
+      selector:
+        object:
+
+delete_recipe:
+  name: Delete Recipe
+  description: Delete a recipe by its key name
+  fields:
+    recipe_name:
+      name: Recipe Name
+      description: The key name of the recipe to delete
+      required: true
+      example: "macchiato_americano"
+      selector:
+        text:

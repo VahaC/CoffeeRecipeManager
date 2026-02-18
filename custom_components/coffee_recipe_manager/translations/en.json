@@ -1,0 +1,49 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Coffee Machine Entities",
+        "description": "Select the entities that control your coffee machine.\n\n[Documentation]({docs_url})",
+        "data": {
+          "machine_drink_select": "Drink select entity",
+          "machine_start_switch": "Start switch entity",
+          "machine_work_state": "Work state sensor entity",
+          "machine_double_switch": "Double shot switch (optional)"
+        }
+      },
+      "faults": {
+        "title": "Fault Sensors",
+        "description": "Select all binary sensors that indicate machine faults. Recipe will stop if any of these turn ON.",
+        "data": {
+          "fault_sensors": "Fault sensors"
+        }
+      },
+      "notify": {
+        "title": "Notifications & Storage",
+        "description": "Configure notifications and where to store recipes.\n\nFor mobile push, enter the full service name e.g. `notify.mobile_app_my_phone`. Leave as `none` to disable.",
+        "data": {
+          "notify_service": "Mobile notification service (or 'none')",
+          "recipes_file": "Recipes YAML filename (relative to HA config dir)"
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Only one Coffee Recipe Manager instance is allowed."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Coffee Recipe Manager Settings",
+        "data": {
+          "machine_drink_select": "Drink select entity",
+          "machine_start_switch": "Start switch entity",
+          "machine_work_state": "Work state sensor entity",
+          "machine_double_switch": "Double shot switch",
+          "fault_sensors": "Fault sensors",
+          "notify_service": "Mobile notification service"
+        }
+      }
+    }
+  }
+}

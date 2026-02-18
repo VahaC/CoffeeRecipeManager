@@ -1,0 +1,61 @@
+# Coffee Recipe Manager - Recipes
+# Place this file in your Home Assistant config directory
+# File: /config/coffee_recipes.yaml
+#
+# After editing, call service: coffee_recipe_manager.reload_recipes
+#
+# Available drinks (for Beko machines):
+# Espresso, Americano, CafeLatte, LatteMacchiato, Ristretto, Doppio,
+# EspressoMacchiato, RistrettoBianco, FlatWhite, Cortado, IcedAmericano,
+# IcedLatte, Hotwater, HotMilk, TravelMug, Cappuccino
+#
+# Step options:
+#   drink: <drink name>        (required)
+#   double: true/false         (optional, default: false)
+#   timeout: <seconds>         (optional, default: 300)
+
+recipes:
+
+  macchiato_americano:
+    name: "Macchiato + Americano"
+    description: "Latte macchiato followed by americano"
+    steps:
+      - drink: LatteMacchiato
+        double: false
+        timeout: 300
+      - drink: Americano
+        double: false
+        timeout: 300
+
+  double_espresso_cappuccino:
+    name: "Double Espresso + Cappuccino"
+    description: "Strong double espresso then a cappuccino"
+    steps:
+      - drink: Espresso
+        double: true
+        timeout: 180
+      - drink: Cappuccino
+        double: false
+        timeout: 300
+
+  morning_boost:
+    name: "Morning Boost"
+    description: "Double ristretto + double americano"
+    steps:
+      - drink: Ristretto
+        double: true
+        timeout: 180
+      - drink: Americano
+        double: true
+        timeout: 300
+
+  cappuccino_espresso:
+    name: "Cappuccino + Espresso"
+    description: "Cappuccino first, then a straight espresso chaser"
+    steps:
+      - drink: Cappuccino
+        double: false
+        timeout: 300
+      - drink: Espresso
+        double: false
+        timeout: 180
