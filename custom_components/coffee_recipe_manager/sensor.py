@@ -10,7 +10,10 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     ATTR_CURRENT_STEP,
+    ATTR_CURRENT_STEP_DRINK,
+    ATTR_BREW_COUNT,
     ATTR_ERROR,
+    ATTR_LAST_COMPLETED_AT,
     ATTR_LAST_RECIPE,
     ATTR_RECIPE_NAME,
     ATTR_STATUS,
@@ -58,9 +61,12 @@ class CoffeeRecipeStatusSensor(SensorEntity):
         return {
             ATTR_RECIPE_NAME: self._executor.current_recipe,
             ATTR_CURRENT_STEP: self._executor.current_step,
+            ATTR_CURRENT_STEP_DRINK: self._executor.current_step_drink,
             ATTR_TOTAL_STEPS: self._executor.total_steps,
             ATTR_ERROR: self._executor.error,
             ATTR_LAST_RECIPE: self._executor.last_recipe,
+            ATTR_LAST_COMPLETED_AT: self._executor.last_completed_at,
+            ATTR_BREW_COUNT: self._executor.brew_count,
         }
 
     @property

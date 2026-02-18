@@ -12,6 +12,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 
 from .const import (
+    CONF_DRINK_OPTIONS,
     CONF_FAULT_SENSORS,
     CONF_MACHINE_DOUBLE_SWITCH,
     CONF_MACHINE_DRINK_SELECT,
@@ -67,6 +68,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "storage": storage,
         "config": config,
     }
+
+    await executor.async_initialize()
 
     # Refresh select entity whenever recipes change (UI flow saves go through storage directly)
     def _on_recipes_changed():
@@ -162,10 +165,11 @@ def _register_services(hass: HomeAssistant) -> None:
         entry_id = _get_first_entry_id(hass)
         if not entry_id:
             return
-        storage: RecipeStorage = hass.data[DOMAIN][entry_id]["storage"]
+        data = hass.data[DOMAIN][entry_id]
+        storage: RecipeStorage = data["storage"]
+        entry_config = data["config"]
 
         recipe_name = call.data["name"]
-        # Generate key from name
         key = re.sub(r"[^a-z0-9_]", "_", recipe_name.lower()).strip("_")
 
         recipe = {
@@ -173,6 +177,30 @@ def _register_services(hass: HomeAssistant) -> None:
             "description": call.data.get("description", ""),
             "steps": call.data["steps"],
         }
+
+        # Validate drinks against configured list
+        allowed = entry_config.get(CONF_DRINK_OPTIONS)
+        if allowed:
+            invalid = RecipeStorage.validate_drinks(recipe, allowed)
+            if invalid:
+                _LOGGER.error(
+                    "Recipe '%s' contains drinks not configured for this machine: %s",
+                    recipe_name, invalid,
+                )
+                await hass.services.async_call(
+                    "persistent_notification", "create",
+                    {
+                        "title": "Coffee Recipe Manager",
+                        "message": (
+                            f"Cannot save recipe **{recipe_name}**:\n"
+                            f"Unknown drinks: {', '.join(invalid)}\n"
+                            f"Allowed: {', '.join(allowed)}"
+                        ),
+                        "notification_id": f"{DOMAIN}_validation_error",
+                    },
+                )
+                return
+
         success = await storage.save_recipe(key, recipe)
         if success:
             _refresh_select(hass, entry_id)

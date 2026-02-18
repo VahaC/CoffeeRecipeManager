@@ -167,13 +167,17 @@ automation:
 | `sensor.coffee_recipe_status` | Current status: `idle`, `running`, `completed`, `error` |
 | `select.coffee_recipe_select_recipe` | Dropdown to pick which recipe to brew |
 | `button.coffee_recipe_brew_selected_recipe` | Brew the currently selected recipe |
+| `button.coffee_recipe_view_selected_recipe` | Show selected recipe details in a notification |
 | `button.coffee_recipe_abort_recipe` | Abort the current recipe |
 
-### Status attributes
+### Status sensor attributes
 - `recipe_name` — currently running recipe
-- `current_step` / `total_steps` — progress
+- `current_step` / `total_steps` — step progress
+- `current_step_drink` — drink being prepared right now (e.g. `LatteMacchiato`)
+- `last_recipe` — name of last completed recipe
+- `last_completed_at` — ISO timestamp of last completion (persisted across restarts)
+- `brew_count` — dict of how many times each recipe was brewed (persisted)
 - `error` — error message if status is `error`
-- `last_recipe` — last successfully completed recipe
 
 ## Fault Handling
 

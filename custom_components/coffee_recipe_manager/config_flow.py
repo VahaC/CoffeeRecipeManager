@@ -228,7 +228,8 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
         ]
 
     async def _save_current_recipe(self) -> config_entries.FlowResult:
-        """Save the accumulated recipe and finish."""
+        """Validate drinks then save the accumulated recipe."""
+        from .storage import RecipeStorage
         storage = self._get_storage()
         key = self._edit_key or re.sub(
             r"[^a-z0-9_]", "_", self._recipe_name.lower()
@@ -238,6 +239,15 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
             "description": self._recipe_description,
             "steps": self._recipe_steps,
         }
+
+        # Validate drinks against configured list
+        current_config = {**self._config_entry.data, **self._config_entry.options}
+        allowed = current_config.get(CONF_DRINK_OPTIONS)
+        if allowed:
+            invalid = RecipeStorage.validate_drinks(recipe, allowed)
+            if invalid:
+                return self.async_abort(reason="invalid_drink_in_recipe")
+
         success = await storage.save_recipe(key, recipe)
         if success:
             return self.async_create_entry(title="", data={})

@@ -77,3 +77,10 @@ ATTR_TOTAL_STEPS = "total_steps"
 ATTR_STATUS = "status"
 ATTR_ERROR = "error"
 ATTR_LAST_RECIPE = "last_recipe"
+ATTR_CURRENT_STEP_DRINK = "current_step_drink"
+ATTR_LAST_COMPLETED_AT = "last_completed_at"
+ATTR_BREW_COUNT = "brew_count"
+
+# Persistent storage
+BREW_STATS_STORE_KEY = f"{DOMAIN}.brew_stats"
+BREW_STATS_STORE_VERSION = 1

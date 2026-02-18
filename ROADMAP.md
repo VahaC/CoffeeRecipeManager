@@ -132,3 +132,4 @@ Registered automatically by the integration — no manual resource setup.
 | v0.0.6–v0.0.9 | Select + Button entities on device page, icon attempts, bug fixes |
 | v0.1.0 | `list_recipes` and `get_recipe` services, dynamic drinks from machine entity |
 | v0.1.1 | "View Selected Recipe" button on device page |
+| v0.2.0 | Richer status sensor (step drink, last_completed_at, brew_count), persistent brew stats, drink validation |

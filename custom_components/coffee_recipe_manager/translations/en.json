@@ -120,7 +120,8 @@
     },
     "abort": {
       "no_recipes": "No recipes found. Add one first.",
-      "recipe_save_failed": "Failed to save recipe — check the steps format."
+      "recipe_save_failed": "Failed to save recipe — check the steps format.",
+      "invalid_drink_in_recipe": "Recipe contains drinks not supported by this machine. Check the configured drink list."
     }
   }
 }

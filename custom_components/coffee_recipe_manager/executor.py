@@ -3,12 +3,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 from typing import Any, Callable
 
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.storage import Store
 
 from .const import (
+    BREW_STATS_STORE_KEY,
+    BREW_STATS_STORE_VERSION,
     DEFAULT_STANDBY_STATE,
     DEFAULT_STEP_TIMEOUT,
     EXECUTOR_COMPLETED,
@@ -45,9 +49,13 @@ class RecipeExecutor:
         self._total_steps: int = 0
         self._error: str | None = None
         self._last_recipe: str | None = None
+        self._current_step_drink: str | None = None
+        self._last_completed_at: str | None = None
+        self._brew_count: dict[str, int] = {}
         self._abort_event = asyncio.Event()
         self._task: asyncio.Task | None = None
         self._fault_unsub = None
+        self._store = Store(hass, BREW_STATS_STORE_VERSION, BREW_STATS_STORE_KEY)
 
     # ------------------------------------------------------------------
     # Public properties
@@ -77,9 +85,41 @@ class RecipeExecutor:
     def last_recipe(self) -> str | None:
         return self._last_recipe
 
+    @property
+    def current_step_drink(self) -> str | None:
+        return self._current_step_drink
+
+    @property
+    def last_completed_at(self) -> str | None:
+        return self._last_completed_at
+
+    @property
+    def brew_count(self) -> dict[str, int]:
+        return dict(self._brew_count)
+
     # ------------------------------------------------------------------
-    # Public API
+    # Initialization (persistent storage)
     # ------------------------------------------------------------------
+
+    async def async_initialize(self) -> None:
+        """Load persisted brew stats from storage."""
+        data = await self._store.async_load()
+        if data:
+            self._last_recipe = data.get("last_recipe")
+            self._last_completed_at = data.get("last_completed_at")
+            self._brew_count = data.get("brew_count", {})
+            _LOGGER.debug(
+                "Loaded brew stats: last=%s, counts=%s",
+                self._last_recipe, self._brew_count,
+            )
+
+    async def _save_stats(self) -> None:
+        """Persist brew stats."""
+        await self._store.async_save({
+            "last_recipe": self._last_recipe,
+            "last_completed_at": self._last_completed_at,
+            "brew_count": self._brew_count,
+        })
 
     async def brew(self, recipe_name: str, steps: list[dict]) -> None:
         """Start brewing a recipe. Aborts any running recipe first."""
@@ -90,6 +130,7 @@ class RecipeExecutor:
         self._current_recipe = recipe_name
         self._total_steps = len(steps)
         self._current_step = 0
+        self._current_step_drink = None
         self._error = None
         self._set_status(EXECUTOR_RUNNING)
 
@@ -144,9 +185,13 @@ class RecipeExecutor:
 
             # All steps done
             self._last_recipe = recipe_name
+            self._last_completed_at = datetime.now(timezone.utc).isoformat()
+            self._brew_count[recipe_name] = self._brew_count.get(recipe_name, 0) + 1
+            self._current_step_drink = None
             self._set_status(EXECUTOR_COMPLETED)
             self.hass.bus.async_fire(EVENT_RECIPE_COMPLETED, {"recipe": recipe_name})
             _LOGGER.info("Recipe '%s' completed successfully", recipe_name)
+            self.hass.async_create_task(self._save_stats())
 
         except asyncio.CancelledError:
             _LOGGER.info("Recipe task cancelled")
@@ -180,6 +225,8 @@ class RecipeExecutor:
                 continue
 
             # 2. Select drink
+            self._current_step_drink = drink
+            self._set_status(EXECUTOR_RUNNING)
             drink_entity = self.config["machine_drink_select"]
             await self.hass.services.async_call(
                 "select", "select_option",
@@ -431,6 +478,7 @@ class RecipeExecutor:
             self.on_state_change()
 
     def _cleanup(self) -> None:
+        self._current_step_drink = None
         if self._fault_unsub:
             self._fault_unsub()
             self._fault_unsub = None

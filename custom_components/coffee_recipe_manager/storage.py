@@ -108,6 +108,16 @@ class RecipeStorage:
             except Exception:  # noqa: BLE001
                 pass
 
+    @staticmethod
+    def validate_drinks(recipe: dict, allowed_drinks: list[str]) -> list[str]:
+        """Return list of invalid drink names found in recipe steps."""
+        invalid = []
+        for step in recipe.get("steps", []):
+            drink = step.get("drink", "")
+            if drink and drink not in allowed_drinks:
+                invalid.append(drink)
+        return invalid
+
     async def _write_example(self) -> None:
         """Write example recipes file."""
         example = {
