@@ -1,10 +1,10 @@
 brew_recipe:
   name: Brew Recipe
-  description: Start brewing a custom coffee recipe
+  description: Start brewing a custom coffee recipe. Use "List Recipes" to see available keys.
   fields:
     recipe_name:
-      name: Recipe Name
-      description: The key name of the recipe (as defined in coffee_recipes.yaml)
+      name: Recipe Key
+      description: The key of the recipe (e.g. "macchiato_americano"). Use List Recipes to see all keys.
       required: true
       example: "macchiato_americano"
       selector:
@@ -51,11 +51,27 @@ add_recipe:
 
 delete_recipe:
   name: Delete Recipe
-  description: Delete a recipe by its key name
+  description: Delete a recipe by its key name. Use "List Recipes" to see available keys.
   fields:
     recipe_name:
-      name: Recipe Name
-      description: The key name of the recipe to delete
+      name: Recipe Key
+      description: The key of the recipe to delete (e.g. "macchiato_americano").
+      required: true
+      example: "macchiato_americano"
+      selector:
+        text:
+
+list_recipes:
+  name: List Recipes
+  description: Show all saved recipes with their keys and steps in a notification.
+
+get_recipe:
+  name: Get Recipe Detail
+  description: Show full details (steps) of a single recipe in a notification.
+  fields:
+    recipe_name:
+      name: Recipe Key
+      description: The key of the recipe to inspect.
       required: true
       example: "macchiato_americano"
       selector:

@@ -97,6 +97,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not hass.data[DOMAIN]:
         hass.services.async_remove(DOMAIN, SERVICE_BREW_RECIPE)
         hass.services.async_remove(DOMAIN, SERVICE_ABORT_RECIPE)
+        for svc in ("reload_recipes", "add_recipe", "delete_recipe", "list_recipes", "get_recipe"):
+            hass.services.async_remove(DOMAIN, svc)
 
     return unload_ok
 
@@ -187,6 +189,60 @@ def _register_services(hass: HomeAssistant) -> None:
         await storage.delete_recipe(call.data["recipe_name"])
         _refresh_select(hass, entry_id)
 
+    async def handle_list_recipes(call: ServiceCall) -> None:
+        """Service: list_recipes — show all recipes in a persistent notification."""
+        entry_id = _get_first_entry_id(hass)
+        if not entry_id:
+            return
+        storage: RecipeStorage = hass.data[DOMAIN][entry_id]["storage"]
+        recipes = storage.recipes
+        if not recipes:
+            msg = "No recipes found."
+        else:
+            lines = []
+            for key, data in recipes.items():
+                steps_summary = ", ".join(
+                    f"{s['drink']}{'×2' if s.get('double') else ''}"
+                    for s in data.get("steps", [])
+                )
+                lines.append(f"**{data['name']}** (`{key}`)  \n{steps_summary}")
+            msg = "\n\n".join(lines)
+        await hass.services.async_call(
+            "persistent_notification", "create",
+            {
+                "title": "Coffee Recipes",
+                "message": msg,
+                "notification_id": f"{DOMAIN}_list",
+            },
+        )
+
+    async def handle_get_recipe(call: ServiceCall) -> None:
+        """Service: get_recipe — show a single recipe's full details."""
+        entry_id = _get_first_entry_id(hass)
+        if not entry_id:
+            return
+        storage: RecipeStorage = hass.data[DOMAIN][entry_id]["storage"]
+        key = call.data["recipe_name"]
+        recipe = storage.get_recipe(key)
+        if not recipe:
+            msg = f"Recipe `{key}` not found.\n\nAvailable keys: {', '.join(f'`{k}`' for k in storage.recipes)}"
+        else:
+            import yaml as _yaml
+            steps_yaml = _yaml.dump(recipe.get("steps", []), allow_unicode=True, default_flow_style=False)
+            msg = (
+                f"**{recipe['name']}** (`{key}`)\n"
+                f"{recipe.get('description', '')}\n\n"
+                f"```yaml\n{steps_yaml}```"
+            )
+        await hass.services.async_call(
+            "persistent_notification", "create",
+            {
+                "title": "Coffee Recipe Detail",
+                "message": msg,
+                "notification_id": f"{DOMAIN}_detail_{key}",
+            },
+        )
+
 
     hass.services.async_register(
         DOMAIN,
@@ -231,6 +287,20 @@ def _register_services(hass: HomeAssistant) -> None:
         DOMAIN,
         "delete_recipe",
         handle_delete_recipe,
+        schema=vol.Schema({vol.Required("recipe_name"): cv.string}),
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        "list_recipes",
+        handle_list_recipes,
+        schema=vol.Schema({}),
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        "get_recipe",
+        handle_get_recipe,
         schema=vol.Schema({vol.Required("recipe_name"): cv.string}),
     )
 
