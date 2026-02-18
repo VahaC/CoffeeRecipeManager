@@ -106,11 +106,12 @@ class CoffeeRecipeManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._data.update(user_input)
             return await self.async_step_faults()
 
-        options = [selector.SelectOptionDict(value=d, label=d) for d in DRINK_OPTIONS]
+        available = _get_machine_drink_options(self.hass, self._data.get(CONF_MACHINE_DRINK_SELECT))
+        options = [selector.SelectOptionDict(value=d, label=d) for d in available]
         schema = vol.Schema({
             vol.Required(
                 CONF_DRINK_OPTIONS,
-                default=DRINK_OPTIONS,
+                default=available,
             ): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=options,
@@ -187,9 +188,16 @@ _DEFAULT_STEPS_EXAMPLE = [
     {"drink": "Espresso", "double": False, "timeout": 300},
 ]
 
-_DRINK_SELECTOR_OPTIONS = [
-    selector.SelectOptionDict(value=d, label=d) for d in DRINK_OPTIONS
-]
+
+def _get_machine_drink_options(hass, entity_id: str | None) -> list[str]:
+    """Return drink options from the machine's select entity, falling back to DRINK_OPTIONS."""
+    if entity_id:
+        state = hass.states.get(entity_id)
+        if state:
+            opts = state.attributes.get("options", [])
+            if opts:
+                return list(opts)
+    return list(DRINK_OPTIONS)
 
 
 class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
@@ -308,11 +316,12 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
             return self.async_create_entry(title="", data=user_input)
 
         current = {**self._config_entry.data, **self._config_entry.options}
-        options = [selector.SelectOptionDict(value=d, label=d) for d in DRINK_OPTIONS]
+        available = _get_machine_drink_options(self.hass, current.get(CONF_MACHINE_DRINK_SELECT))
+        options = [selector.SelectOptionDict(value=d, label=d) for d in available]
         schema = vol.Schema({
             vol.Required(
                 CONF_DRINK_OPTIONS,
-                default=current.get(CONF_DRINK_OPTIONS, DRINK_OPTIONS),
+                default=current.get(CONF_DRINK_OPTIONS, available),
             ): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=options,
@@ -389,9 +398,12 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
             and self._step_index + 1 < len(self._step_prefill)
         )
 
-        # Use configured drinks for this machine, fall back to full list
+        # Use configured drinks for this machine, fall back to machine entity options
         current_config = {**self._config_entry.data, **self._config_entry.options}
-        configured_drinks = current_config.get(CONF_DRINK_OPTIONS, DRINK_OPTIONS)
+        configured_drinks = current_config.get(
+            CONF_DRINK_OPTIONS,
+            _get_machine_drink_options(self.hass, current_config.get(CONF_MACHINE_DRINK_SELECT)),
+        )
         drink_options = [
             selector.SelectOptionDict(value=d, label=d) for d in configured_drinks
         ]
