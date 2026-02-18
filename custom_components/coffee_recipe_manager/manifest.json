@@ -1,13 +1,12 @@
 {
   "domain": "coffee_recipe_manager",
   "name": "Coffee Recipe Manager",
-  "version": "1.0.0",
+  "version": "0.0.6",
   "documentation": "https://github.com/vahac/coffee-recipe-manager",
   "issue_tracker": "https://github.com/vahac/coffee-recipe-manager/issues",
   "dependencies": [],
   "codeowners": ["@vahac"],
   "requirements": [],
   "iot_class": "local_push",
-  "config_flow": true,
-  "icon": "mdi:coffee-maker"
+  "config_flow": true
 }
