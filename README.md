@@ -5,11 +5,12 @@ A Home Assistant custom integration for brewing custom multi-step coffee recipes
 ## Features
 
 - 🧾 Define recipes with multiple steps (e.g. Macchiato → Americano)
-- �️ Manage recipes directly from the HA UI — no YAML editing required
+- 🗂️ Manage recipes directly from the HA UI — no YAML editing required
 - 🛡️ Fault monitoring — pauses recipe and **auto-resumes** after fault is cleared
 - 📱 Notifications — persistent HA notification + optional mobile push
 - 🖥️ Config Flow — full UI setup, no YAML editing required for setup
 - 📝 Recipes also editable via `coffee_recipes.yaml` in your HA config directory
+- 🎛️ Device page controls — Select Recipe dropdown + Brew/Abort buttons
 - 🔧 HACS compatible
 
 ## Installation via HACS
@@ -110,6 +111,40 @@ recipes:
 | `coffee_recipe_manager.reload_recipes` | Reload YAML after manual edits |
 | `coffee_recipe_manager.add_recipe` | Add/update recipe via service call |
 | `coffee_recipe_manager.delete_recipe` | Delete a recipe by key |
+| `coffee_recipe_manager.list_recipes` | Show all recipes with keys in a notification |
+| `coffee_recipe_manager.get_recipe` | Show full details of one recipe in a notification |
+
+### Managing recipes via Services
+
+Useful from **Developer Tools → Actions** or in automations/scripts:
+
+```yaml
+# 1. See all available recipe keys
+service: coffee_recipe_manager.list_recipes
+
+# 2. See full steps of a specific recipe
+service: coffee_recipe_manager.get_recipe
+data:
+  recipe_name: morning_boost
+
+# 3. Add or update a recipe
+service: coffee_recipe_manager.add_recipe
+data:
+  name: "Morning Boost"
+  description: "Quick start"
+  steps:
+    - drink: Espresso
+      double: false
+      timeout: 120
+    - drink: Americano
+      double: false
+      timeout: 300
+
+# 4. Delete a recipe
+service: coffee_recipe_manager.delete_recipe
+data:
+  recipe_name: morning_boost
+```
 
 ### Example automation
 
@@ -130,6 +165,9 @@ automation:
 | Entity | Description |
 |--------|-------------|
 | `sensor.coffee_recipe_status` | Current status: `idle`, `running`, `completed`, `error` |
+| `select.coffee_recipe_select_recipe` | Dropdown to pick which recipe to brew |
+| `button.coffee_recipe_brew_selected_recipe` | Brew the currently selected recipe |
+| `button.coffee_recipe_abort_recipe` | Abort the current recipe |
 
 ### Status attributes
 - `recipe_name` — currently running recipe
