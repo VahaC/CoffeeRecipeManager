@@ -5,10 +5,11 @@ A Home Assistant custom integration for brewing custom multi-step coffee recipes
 ## Features
 
 - 🧾 Define recipes with multiple steps (e.g. Macchiato → Americano)
-- 🛡️ Fault monitoring — stops recipe if water/milk/container fault detected
+- �️ Manage recipes directly from the HA UI — no YAML editing required
+- 🛡️ Fault monitoring — pauses recipe and **auto-resumes** after fault is cleared
 - 📱 Notifications — persistent HA notification + optional mobile push
 - 🖥️ Config Flow — full UI setup, no YAML editing required for setup
-- 📝 Recipes stored in `coffee_recipes.yaml` in your HA config directory
+- 📝 Recipes also editable via `coffee_recipes.yaml` in your HA config directory
 - 🔧 HACS compatible
 
 ## Installation via HACS
@@ -29,9 +30,59 @@ The config flow will guide you through 3 steps:
 2. **Fault sensors** — select all binary sensors that indicate machine errors
 3. **Notifications** — optional mobile push service + recipes file name
 
-## Recipes
+## Managing Recipes via UI
 
-Recipes are stored in `<ha_config>/coffee_recipes.yaml`. An example file is created automatically on first run:
+Go to **Settings → Devices & Services → Coffee Recipe Manager → Configure**.
+
+The options menu has two sections:
+
+### Machine settings
+Update machine entities, fault sensors, and notification service.
+
+### Manage recipes
+
+Three actions are available:
+
+#### ➕ Add new recipe
+
+1. Click **Configure** on the integration card
+2. Choose **Manage recipes → Add new recipe**
+3. Fill in:
+   - **Recipe name** — human-readable name (e.g. `Morning Boost`)
+   - **Description** — optional
+   - **Steps** — list of steps in YAML/object format:
+
+```yaml
+- drink: LatteMacchiato
+  double: false
+  timeout: 300
+- drink: Americano
+  double: false
+  timeout: 300
+```
+
+4. Click **Submit** — the recipe is saved immediately
+
+The recipe key (used in automations) is auto-generated from the name, e.g. `Morning Boost` → `morning_boost`.
+
+#### ✏️ Edit recipe
+
+1. Choose **Manage recipes → Edit recipe**
+2. Select the recipe from the dropdown
+3. Modify name, description, or steps
+4. Click **Submit**
+
+#### 🗑️ Delete recipe
+
+1. Choose **Manage recipes → Delete recipe**
+2. Select the recipe to remove
+3. Click **Submit** — permanently deleted from the YAML file
+
+---
+
+## Recipes via YAML
+
+Recipes are also editable directly in `<ha_config>/coffee_recipes.yaml`. An example file is created automatically on first run:
 
 ```yaml
 recipes:
@@ -88,13 +139,22 @@ automation:
 
 ## Fault Handling
 
-If any fault sensor turns `on` during brewing:
-1. Recipe stops immediately
-2. Persistent notification appears in HA
-3. Mobile push sent (if configured)
-4. `sensor.coffee_recipe_status` → `error` with fault description
+If any fault sensor turns `on` during brewing (e.g. water empty, tray full):
 
-After you fix the fault, you can restart the recipe manually.
+1. Recipe **pauses** immediately
+2. `sensor.coffee_recipe_status` → `waiting_fault_clear`
+3. Persistent notification appears in HA: ⚠️ *Recipe paused — fix the issue and brewing will resume automatically*
+4. Mobile push sent (if configured)
+
+Once the fault is resolved (sensor turns `off`):
+
+1. Integration detects the change automatically
+2. Waits 2 seconds for the machine to stabilise
+3. **Restarts the current step** from the beginning (re-selects drink, re-starts machine)
+4. Sends a ✅ *Fault resolved. Resuming recipe...* notification
+5. `sensor.coffee_recipe_status` → `running`
+
+> You can call `coffee_recipe_manager.abort_recipe` at any time to cancel instead of waiting.
 
 ## Notes
 
