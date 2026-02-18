@@ -8,6 +8,7 @@ from pathlib import Path
 
 import voluptuous as vol
 
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
@@ -38,11 +39,13 @@ PLATFORMS = ["sensor", "select", "button"]
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Register static path for integration icons."""
     component_dir = Path(__file__).parent
-    hass.http.register_static_path(
-        f"/brands/icon/{DOMAIN}",
-        str(component_dir),
-        cache_headers=False,
-    )
+    await hass.http.async_register_static_paths([
+        StaticPathConfig(
+            url_path=f"/brands/icon/{DOMAIN}",
+            path=str(component_dir),
+            cache_headers=False,
+        )
+    ])
     return True
 
 
