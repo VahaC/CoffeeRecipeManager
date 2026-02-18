@@ -10,8 +10,9 @@ A Home Assistant custom integration for brewing custom multi-step coffee recipes
 - 📱 Notifications — persistent HA notification + optional mobile push
 - 🖥️ Config Flow — full UI setup, no YAML editing required for setup
 - 📝 Recipes also editable via `coffee_recipes.yaml` in your HA config directory
-- 🎛️ Device page controls — Select Recipe dropdown + Brew/Abort buttons
-- 🔧 HACS compatible
+- 🎛️ Device page controls — Select Recipe dropdown + Brew/Abort/View buttons
+- 📊 Brew statistics — persistent count per recipe + last completed timestamp
+- 🔧 HACS compatible with integration icon
 
 ## Installation via HACS
 

@@ -133,3 +133,4 @@ Registered automatically by the integration — no manual resource setup.
 | v0.1.0 | `list_recipes` and `get_recipe` services, dynamic drinks from machine entity |
 | v0.1.1 | "View Selected Recipe" button on device page |
 | v0.2.0 | Richer status sensor (step drink, last_completed_at, brew_count), persistent brew stats, drink validation |
+| v0.2.1 | Integration icon added to HACS (`hacs.json`), icon submitted to home-assistant/brands |

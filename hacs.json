@@ -1,5 +1,6 @@
 {
   "name": "Coffee Recipe Manager",
   "category": "integration",
-  "render_readme": true
+  "render_readme": true,
+  "icon": "custom_components/coffee_recipe_manager/icon.png"
 }
