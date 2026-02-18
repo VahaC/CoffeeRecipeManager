@@ -179,6 +179,34 @@ automation:
 - `brew_count` — dict of how many times each recipe was brewed (persisted)
 - `error` — error message if status is `error`
 
+### How to view sensor attributes
+
+**Option 1 — Developer Tools:**
+Go to **Developer Tools → States**, search for `coffee_recipe_status` — all attributes are listed there.
+
+**Option 2 — Dashboard card:**
+Add a Markdown card to any dashboard:
+```yaml
+type: markdown
+content: |
+  ## ☕ Coffee Recipe Manager
+  **Status:** {{ states('sensor.coffee_recipe_manager_recipe_status') }}
+  **Recipe:** {{ state_attr('sensor.coffee_recipe_manager_recipe_status', 'recipe_name') }}
+  **Step:** {{ state_attr('sensor.coffee_recipe_manager_recipe_status', 'current_step') }} / {{ state_attr('sensor.coffee_recipe_manager_recipe_status', 'total_steps') }}
+  **Now brewing:** {{ state_attr('sensor.coffee_recipe_manager_recipe_status', 'current_step_drink') }}
+  **Last brew:** {{ state_attr('sensor.coffee_recipe_manager_recipe_status', 'last_recipe') }} at {{ state_attr('sensor.coffee_recipe_manager_recipe_status', 'last_completed_at') | as_datetime | as_local }}
+  **Brew counts:** {{ state_attr('sensor.coffee_recipe_manager_recipe_status', 'brew_count') }}
+```
+
+**Option 3 — Automation condition (example):**
+```yaml
+condition:
+  - condition: template
+    value_template: >
+      {{ (now() - state_attr('sensor.coffee_recipe_manager_recipe_status', 'last_completed_at') | as_datetime)
+         .total_seconds() > 1800 }}
+```
+
 ## Fault Handling
 
 If any fault sensor turns `on` during brewing (e.g. water empty, tray full):
