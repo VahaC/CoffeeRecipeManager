@@ -32,6 +32,7 @@ class RecipeStorage:
         self.hass = hass
         self._filepath = filepath
         self._recipes: dict[str, dict] = {}
+        self.on_recipes_changed: callable | None = None
 
     @property
     def recipes(self) -> dict[str, dict]:
@@ -66,6 +67,7 @@ class RecipeStorage:
 
             self._recipes = loaded
             _LOGGER.info("Loaded %d recipes from %s", len(loaded), self._filepath)
+            self._notify_changed()
 
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("Failed to load recipes: %s", exc)
@@ -76,6 +78,7 @@ class RecipeStorage:
             validated = RECIPE_SCHEMA(recipe)
             self._recipes[key] = validated
             await self._save_all()
+            self._notify_changed()
             return True
         except vol.Invalid as exc:
             _LOGGER.error("Invalid recipe data: %s", exc)
@@ -87,6 +90,7 @@ class RecipeStorage:
             return False
         del self._recipes[key]
         await self._save_all()
+        self._notify_changed()
         return True
 
     async def _save_all(self) -> None:
@@ -95,6 +99,14 @@ class RecipeStorage:
         with open(self._filepath, "w", encoding="utf-8") as f:
             yaml.dump(data, f, allow_unicode=True, sort_keys=False)
         _LOGGER.debug("Saved recipes to %s", self._filepath)
+
+    def _notify_changed(self) -> None:
+        """Call on_recipes_changed callback if set."""
+        if self.on_recipes_changed is not None:
+            try:
+                self.on_recipes_changed()
+            except Exception:  # noqa: BLE001
+                pass
 
     async def _write_example(self) -> None:
         """Write example recipes file."""

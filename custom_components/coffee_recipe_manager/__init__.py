@@ -31,7 +31,7 @@ from .storage import RecipeStorage
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["sensor"]
+PLATFORMS = ["sensor", "select", "button"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -67,6 +67,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "storage": storage,
         "config": config,
     }
+
+    # Refresh select entity whenever recipes change (UI flow saves go through storage directly)
+    def _on_recipes_changed():
+        _refresh_select(hass, entry.entry_id)
+
+    storage.on_recipes_changed = _on_recipes_changed
 
     # Register services (only once)
     if not hass.services.has_service(DOMAIN, SERVICE_BREW_RECIPE):
@@ -143,8 +149,10 @@ def _register_services(hass: HomeAssistant) -> None:
         entry_id = _get_first_entry_id(hass)
         if not entry_id:
             return
-        storage: RecipeStorage = hass.data[DOMAIN][entry_id]["storage"]
+        data = hass.data[DOMAIN][entry_id]
+        storage: RecipeStorage = data["storage"]
         await storage.load()
+        _refresh_select(hass, entry_id)
         _LOGGER.info("Recipes reloaded")
 
     async def handle_add_recipe(call: ServiceCall) -> None:
@@ -165,6 +173,7 @@ def _register_services(hass: HomeAssistant) -> None:
         }
         success = await storage.save_recipe(key, recipe)
         if success:
+            _refresh_select(hass, entry_id)
             _LOGGER.info("Recipe '%s' saved as '%s'", recipe_name, key)
         else:
             _LOGGER.error("Failed to save recipe '%s'", recipe_name)
@@ -176,6 +185,8 @@ def _register_services(hass: HomeAssistant) -> None:
             return
         storage: RecipeStorage = hass.data[DOMAIN][entry_id]["storage"]
         await storage.delete_recipe(call.data["recipe_name"])
+        _refresh_select(hass, entry_id)
+
 
     hass.services.async_register(
         DOMAIN,
@@ -227,3 +238,10 @@ def _register_services(hass: HomeAssistant) -> None:
 def _get_first_entry_id(hass: HomeAssistant) -> str | None:
     entries = list(hass.data.get(DOMAIN, {}).keys())
     return entries[0] if entries else None
+
+
+def _refresh_select(hass: HomeAssistant, entry_id: str) -> None:
+    """Tell the recipe select entity to refresh its options."""
+    select_entity = hass.data.get(DOMAIN, {}).get(entry_id, {}).get("recipe_select")
+    if select_entity is not None:
+        select_entity.reload_options()
