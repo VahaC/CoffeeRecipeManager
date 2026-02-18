@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Background circle -->
+  <circle cx="128" cy="128" r="128" fill="#1a1a2e"/>
+
+  <!-- Machine body -->
+  <rect x="52" y="72" width="152" height="130" rx="14" ry="14" fill="#2d2d44"/>
+
+  <!-- Machine front panel -->
+  <rect x="64" y="84" width="128" height="106" rx="10" ry="10" fill="#23233a"/>
+
+  <!-- Display screen -->
+  <rect x="76" y="94" width="70" height="38" rx="6" ry="6" fill="#0d1b2a"/>
+  <rect x="79" y="97" width="64" height="32" rx="4" ry="4" fill="#0a3d62"/>
+  <!-- Screen glow lines -->
+  <text x="84" y="113" font-family="monospace" font-size="10" fill="#00d4ff" opacity="0.9">☕ READY</text>
+  <text x="88" y="124" font-family="monospace" font-size="7" fill="#4fc3f7" opacity="0.7">RECIPE MODE</text>
+
+  <!-- Buttons row -->
+  <circle cx="165" cy="101" r="9" fill="#3a3a5c"/>
+  <circle cx="165" cy="101" r="6" fill="#c0392b"/>
+  <circle cx="165" cy="101" r="3" fill="#e74c3c"/>
+
+  <circle cx="183" cy="101" r="9" fill="#3a3a5c"/>
+  <circle cx="183" cy="101" r="6" fill="#27ae60"/>
+  <circle cx="183" cy="101" r="3" fill="#2ecc71"/>
+
+  <!-- Knob -->
+  <circle cx="174" cy="120" r="11" fill="#3a3a5c"/>
+  <circle cx="174" cy="120" r="8" fill="#4a4a6a"/>
+  <circle cx="174" cy="114" r="2.5" fill="#a0a0c0"/>
+
+  <!-- Coffee spout area -->
+  <rect x="88" y="138" width="80" height="12" rx="4" ry="4" fill="#1a1a30"/>
+  <!-- Left spout -->
+  <rect x="100" y="150" width="10" height="18" rx="3" ry="3" fill="#3a3a5c"/>
+  <!-- Right spout -->
+  <rect x="146" y="150" width="10" height="18" rx="3" ry="3" fill="#3a3a5c"/>
+
+  <!-- Coffee drip left -->
+  <ellipse cx="105" cy="170" rx="3" ry="5" fill="#6f3c1e" opacity="0.8"/>
+  <circle cx="105" cy="176" r="3" fill="#6f3c1e" opacity="0.6"/>
+
+  <!-- Coffee drip right -->
+  <ellipse cx="151" cy="170" rx="3" ry="5" fill="#6f3c1e" opacity="0.8"/>
+  <circle cx="151" cy="176" r="3" fill="#6f3c1e" opacity="0.6"/>
+
+  <!-- Drip tray -->
+  <rect x="72" y="190" width="112" height="8" rx="3" ry="3" fill="#3a3a5c"/>
+  <rect x="76" y="193" width="104" height="3" rx="2" ry="2" fill="#2a2a48"/>
+
+  <!-- Steam wisps from left spout -->
+  <path d="M102 148 Q98 140 102 132 Q106 124 102 116" stroke="#b0c4de" stroke-width="1.5" fill="none" opacity="0.5" stroke-linecap="round"/>
+  <path d="M107 148 Q111 140 107 132 Q103 124 107 116" stroke="#b0c4de" stroke-width="1.5" fill="none" opacity="0.4" stroke-linecap="round"/>
+
+  <!-- Steam wisps from right spout -->
+  <path d="M148 148 Q144 140 148 132 Q152 124 148 116" stroke="#b0c4de" stroke-width="1.5" fill="none" opacity="0.5" stroke-linecap="round"/>
+  <path d="M153 148 Q157 140 153 132 Q149 124 153 116" stroke="#b0c4de" stroke-width="1.5" fill="none" opacity="0.4" stroke-linecap="round"/>
+
+  <!-- Water tank on side -->
+  <rect x="192" y="90" width="18" height="80" rx="6" ry="6" fill="#2d3a4a"/>
+  <rect x="194" y="92" width="14" height="76" rx="5" ry="5" fill="#1a2a3a"/>
+  <!-- Water level -->
+  <rect x="195" y="118" width="12" height="48" rx="4" ry="4" fill="#1565c0" opacity="0.7"/>
+  <rect x="196" y="119" width="10" height="10" rx="3" ry="3" fill="#42a5f5" opacity="0.5"/>
+
+  <!-- Bean hopper on top -->
+  <ellipse cx="128" cy="74" rx="28" ry="8" fill="#3a3a5c"/>
+  <path d="M100 74 L106 58 L150 58 L156 74 Z" fill="#2d2d44"/>
+  <ellipse cx="128" cy="58" rx="22" ry="6" fill="#3a3a5c"/>
+  <!-- Beans -->
+  <ellipse cx="120" cy="58" rx="4" ry="3" fill="#4a2800" transform="rotate(-20 120 58)"/>
+  <ellipse cx="132" cy="56" rx="4" ry="3" fill="#5c3300" transform="rotate(10 132 56)"/>
+  <ellipse cx="125" cy="62" rx="3.5" ry="2.5" fill="#3d2000" transform="rotate(30 125 62)"/>
+
+  <!-- Accent light strip at bottom of panel -->
+  <rect x="64" y="186" width="128" height="3" rx="1.5" ry="1.5" fill="#00bcd4" opacity="0.6"/>
+</svg>
