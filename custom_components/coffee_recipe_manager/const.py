@@ -11,6 +11,7 @@ CONF_MACHINE_DOUBLE_SWITCH = "machine_double_switch"
 CONF_FAULT_SENSORS = "fault_sensors"
 CONF_NOTIFY_SERVICE = "notify_service"
 CONF_RECIPES_FILE = "recipes_file"
+CONF_DRINK_OPTIONS = "drink_options"
 
 # Defaults
 DEFAULT_DRINK_SELECT = "select.coffee_machine_drink_set"
@@ -31,6 +32,25 @@ DEFAULT_FAULT_SENSORS = [
     "binary_sensor.coffee_machine_fault_heating_fault",
     "binary_sensor.coffee_machine_fault_milkcup_missing",
     "binary_sensor.coffee_machine_fault_nic_fault",
+]
+
+DRINK_OPTIONS = [
+    "Espresso",
+    "Americano",
+    "CafeLatte",
+    "LatteMacchiato",
+    "Ristretto",
+    "Doppio",
+    "EspressoMacchiato",
+    "RistrettoBianco",
+    "FlatWhite",
+    "Cortado",
+    "IcedAmericano",
+    "IcedLatte",
+    "Hotwater",
+    "HotMilk",
+    "TravelMug",
+    "Cappuccino",
 ]
 
 # Recipe executor states

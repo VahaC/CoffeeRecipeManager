@@ -12,6 +12,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_DRINK_OPTIONS,
     CONF_FAULT_SENSORS,
     CONF_MACHINE_DOUBLE_SWITCH,
     CONF_MACHINE_DRINK_SELECT,
@@ -25,6 +26,7 @@ from .const import (
     DEFAULT_RECIPES_FILE,
     DEFAULT_START_SWITCH,
     DEFAULT_WORK_STATE,
+    DRINK_OPTIONS,
     DOMAIN,
 )
 
@@ -58,7 +60,7 @@ class CoffeeRecipeManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if not errors:
                 self._data = user_input
-                return await self.async_step_faults()
+                return await self.async_step_drinks()
 
         schema = vol.Schema({
             vol.Required(
@@ -96,10 +98,34 @@ class CoffeeRecipeManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
+    async def async_step_drinks(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Step 2: Available drinks."""
+        if user_input is not None:
+            self._data.update(user_input)
+            return await self.async_step_faults()
+
+        options = [selector.SelectOptionDict(value=d, label=d) for d in DRINK_OPTIONS]
+        schema = vol.Schema({
+            vol.Required(
+                CONF_DRINK_OPTIONS,
+                default=DRINK_OPTIONS,
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options,
+                    multiple=True,
+                    mode=selector.SelectSelectorMode.LIST,
+                )
+            ),
+        })
+
+        return self.async_show_form(step_id="drinks", data_schema=schema)
+
     async def async_step_faults(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        """Step 2: Fault sensors."""
+        """Step 3: Fault sensors."""
         if user_input is not None:
             self._data.update(user_input)
             return await self.async_step_notify()
@@ -124,7 +150,7 @@ class CoffeeRecipeManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_notify(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        """Step 3: Notification service + recipes file."""
+        """Step 4: Notification service + recipes file."""
         if user_input is not None:
             self._data.update(user_input)
             return self.async_create_entry(
@@ -161,6 +187,10 @@ _DEFAULT_STEPS_EXAMPLE = [
     {"drink": "Espresso", "double": False, "timeout": 300},
 ]
 
+_DRINK_SELECTOR_OPTIONS = [
+    selector.SelectOptionDict(value=d, label=d) for d in DRINK_OPTIONS
+]
+
 
 class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
     """Handle options for Coffee Recipe Manager."""
@@ -168,6 +198,12 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._config_entry = config_entry
         self._edit_key: str | None = None
+        # Recipe builder state
+        self._recipe_name: str = ""
+        self._recipe_description: str = ""
+        self._recipe_steps: list[dict] = []
+        self._step_prefill: list[dict] = []  # existing steps when editing
+        self._step_index: int = 0
 
     # ------------------------------------------------------------------
     # Helpers
@@ -183,6 +219,22 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
             for key, data in storage.recipes.items()
         ]
 
+    async def _save_current_recipe(self) -> config_entries.FlowResult:
+        """Save the accumulated recipe and finish."""
+        storage = self._get_storage()
+        key = self._edit_key or re.sub(
+            r"[^a-z0-9_]", "_", self._recipe_name.lower()
+        ).strip("_")
+        recipe = {
+            "name": self._recipe_name,
+            "description": self._recipe_description,
+            "steps": self._recipe_steps,
+        }
+        success = await storage.save_recipe(key, recipe)
+        if success:
+            return self.async_create_entry(title="", data={})
+        return self.async_abort(reason="recipe_save_failed")
+
     # ------------------------------------------------------------------
     # Root menu
     # ------------------------------------------------------------------
@@ -193,7 +245,7 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
         """Root menu: machine settings or recipe management."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["machine_settings", "recipes_menu"],
+            menu_options=["machine_settings", "machine_drinks", "recipes_menu"],
         )
 
     # ------------------------------------------------------------------
@@ -248,6 +300,29 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
 
         return self.async_show_form(step_id="machine_settings", data_schema=schema)
 
+    async def async_step_machine_drinks(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Options: update available drinks."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        current = {**self._config_entry.data, **self._config_entry.options}
+        options = [selector.SelectOptionDict(value=d, label=d) for d in DRINK_OPTIONS]
+        schema = vol.Schema({
+            vol.Required(
+                CONF_DRINK_OPTIONS,
+                default=current.get(CONF_DRINK_OPTIONS, DRINK_OPTIONS),
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options,
+                    multiple=True,
+                    mode=selector.SelectSelectorMode.LIST,
+                )
+            ),
+        })
+        return self.async_show_form(step_id="machine_drinks", data_schema=schema)
+
     # ------------------------------------------------------------------
     # Recipe management menu
     # ------------------------------------------------------------------
@@ -262,44 +337,95 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
         )
 
     # ------------------------------------------------------------------
-    # Add recipe
+    # Add recipe — step 1: name + description
     # ------------------------------------------------------------------
 
     async def async_step_recipe_add(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        """Form: add a new recipe."""
-        errors: dict[str, str] = {}
-
+        """Add recipe: collect name and description."""
         if user_input is not None:
-            storage = self._get_storage()
-            name = user_input["name"].strip()
-            key = re.sub(r"[^a-z0-9_]", "_", name.lower()).strip("_")
-            steps = user_input.get("steps", _DEFAULT_STEPS_EXAMPLE)
-
-            if not isinstance(steps, list) or not steps:
-                errors["steps"] = "steps_invalid"
-            else:
-                recipe = {
-                    "name": name,
-                    "description": user_input.get("description", ""),
-                    "steps": steps,
-                }
-                success = await storage.save_recipe(key, recipe)
-                if success:
-                    return self.async_create_entry(title="", data={})
-                errors["base"] = "recipe_save_failed"
+            self._recipe_name = user_input["name"].strip()
+            self._recipe_description = user_input.get("description", "")
+            self._recipe_steps = []
+            self._step_prefill = []
+            self._step_index = 0
+            self._edit_key = None
+            return await self.async_step_recipe_step()
 
         schema = vol.Schema({
             vol.Required("name"): selector.TextSelector(),
             vol.Optional("description", default=""): selector.TextSelector(),
-            vol.Required("steps", default=_DEFAULT_STEPS_EXAMPLE): selector.ObjectSelector(),
+        })
+        return self.async_show_form(step_id="recipe_add", data_schema=schema)
+
+    # ------------------------------------------------------------------
+    # Shared step builder (add + edit reuse this)
+    # ------------------------------------------------------------------
+
+    async def async_step_recipe_step(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Collect one drink step, optionally loop for more."""
+        if user_input is not None:
+            self._recipe_steps.append({
+                "drink": user_input["drink"],
+                "double": bool(user_input.get("double", False)),
+                "timeout": int(user_input.get("timeout", 300)),
+            })
+            self._step_index += 1
+            if user_input.get("add_another", False):
+                return await self.async_step_recipe_step()
+            return await self._save_current_recipe()
+
+        # Pre-fill with existing step when editing
+        prefill: dict = {}
+        if self._step_prefill and self._step_index < len(self._step_prefill):
+            prefill = self._step_prefill[self._step_index]
+
+        # Suggest "add another" if there are more existing steps to walk through
+        more_exist = (
+            self._step_prefill
+            and self._step_index + 1 < len(self._step_prefill)
+        )
+
+        # Use configured drinks for this machine, fall back to full list
+        current_config = {**self._config_entry.data, **self._config_entry.options}
+        configured_drinks = current_config.get(CONF_DRINK_OPTIONS, DRINK_OPTIONS)
+        drink_options = [
+            selector.SelectOptionDict(value=d, label=d) for d in configured_drinks
+        ]
+        default_drink = prefill.get("drink") or (configured_drinks[0] if configured_drinks else "Espresso")
+
+        schema = vol.Schema({
+            vol.Required("drink", default=default_drink):
+                selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=drink_options,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            vol.Optional("double", default=bool(prefill.get("double", False))):
+                selector.BooleanSelector(),
+            vol.Optional("timeout", default=int(prefill.get("timeout", 300))):
+                selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=10, max=3600, step=10,
+                        unit_of_measurement="s",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+            vol.Optional("add_another", default=bool(more_exist)):
+                selector.BooleanSelector(),
         })
 
         return self.async_show_form(
-            step_id="recipe_add",
+            step_id="recipe_step",
             data_schema=schema,
-            errors=errors,
+            description_placeholders={
+                "step_num": str(self._step_index + 1),
+                "recipe_name": self._recipe_name,
+            },
         )
 
     # ------------------------------------------------------------------
@@ -323,44 +449,30 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
                 selector.SelectSelectorConfig(options=options)
             ),
         })
-
         return self.async_show_form(step_id="recipe_edit_select", data_schema=schema)
 
     async def async_step_recipe_edit(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        """Form: edit the selected recipe."""
+        """Edit: collect updated name and description, then step through steps."""
         storage = self._get_storage()
-        errors: dict[str, str] = {}
+        existing = storage.get_recipe(self._edit_key) or {}
 
         if user_input is not None:
-            name = user_input["name"].strip()
-            steps = user_input.get("steps", [])
+            self._recipe_name = user_input["name"].strip()
+            self._recipe_description = user_input.get("description", "")
+            self._recipe_steps = []
+            self._step_prefill = list(existing.get("steps", []))
+            self._step_index = 0
+            return await self.async_step_recipe_step()
 
-            if not isinstance(steps, list) or not steps:
-                errors["steps"] = "steps_invalid"
-            else:
-                recipe = {
-                    "name": name,
-                    "description": user_input.get("description", ""),
-                    "steps": steps,
-                }
-                success = await storage.save_recipe(self._edit_key, recipe)
-                if success:
-                    return self.async_create_entry(title="", data={})
-                errors["base"] = "recipe_save_failed"
-
-        existing = storage.get_recipe(self._edit_key) or {}
         schema = vol.Schema({
             vol.Required("name", default=existing.get("name", "")): selector.TextSelector(),
             vol.Optional("description", default=existing.get("description", "")): selector.TextSelector(),
-            vol.Required("steps", default=existing.get("steps", _DEFAULT_STEPS_EXAMPLE)): selector.ObjectSelector(),
         })
-
         return self.async_show_form(
             step_id="recipe_edit",
             data_schema=schema,
-            errors=errors,
             description_placeholders={"recipe_key": self._edit_key},
         )
 
@@ -386,9 +498,7 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
                 selector.SelectSelectorConfig(options=options)
             ),
         })
-
         return self.async_show_form(
             step_id="recipe_delete_select",
             data_schema=schema,
-            description_placeholders={},
         )

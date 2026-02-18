@@ -11,6 +11,13 @@
           "machine_double_switch": "Double shot switch (optional)"
         }
       },
+      "drinks": {
+        "title": "Available Drinks",
+        "description": "Select all drinks that your machine supports. Only these will appear when creating recipes.",
+        "data": {
+          "drink_options": "Supported drinks"
+        }
+      },
       "faults": {
         "title": "Fault Sensors",
         "description": "Select all binary sensors that indicate machine faults. Recipe will stop if any of these turn ON.",
@@ -37,6 +44,7 @@
         "title": "Coffee Recipe Manager",
         "menu_options": {
           "machine_settings": "Machine settings",
+          "machine_drinks": "Available drinks",
           "recipes_menu": "Manage recipes"
         }
       },
@@ -51,6 +59,13 @@
           "notify_service": "Mobile notification service (or 'none')"
         }
       },
+      "machine_drinks": {
+        "title": "Available Drinks",
+        "description": "Select all drinks that your machine supports. Only these will appear when creating or editing recipes.",
+        "data": {
+          "drink_options": "Supported drinks"
+        }
+      },
       "recipes_menu": {
         "title": "Recipe Management",
         "menu_options": {
@@ -61,11 +76,20 @@
       },
       "recipe_add": {
         "title": "Add Recipe",
-        "description": "Define the recipe name and its steps.\n\nEach step is an object with:\n- `drink` (required) — e.g. `Espresso`, `Americano`, `Cappuccino`\n- `double` (optional, default `false`)\n- `timeout` (optional, default `300` seconds)",
+        "description": "Enter the recipe name and description. Next you will add steps one by one.",
         "data": {
           "name": "Recipe name",
-          "description": "Description (optional)",
-          "steps": "Steps"
+          "description": "Description (optional)"
+        }
+      },
+      "recipe_step": {
+        "title": "Step {step_num} — {recipe_name}",
+        "description": "Choose the drink for this step.",
+        "data": {
+          "drink": "Drink",
+          "double": "Double portion",
+          "timeout": "Timeout (seconds)",
+          "add_another": "Add another step after this one"
         }
       },
       "recipe_edit_select": {
@@ -77,11 +101,10 @@
       },
       "recipe_edit": {
         "title": "Edit Recipe: {recipe_key}",
-        "description": "Modify the recipe name, description and steps.\n\nEach step: `drink` (required), `double` (optional), `timeout` (optional seconds).",
+        "description": "Update the recipe name and description. Next you will re-enter steps one by one.",
         "data": {
           "name": "Recipe name",
-          "description": "Description (optional)",
-          "steps": "Steps"
+          "description": "Description (optional)"
         }
       },
       "recipe_delete_select": {
@@ -93,11 +116,11 @@
       }
     },
     "error": {
-      "recipe_save_failed": "Failed to save recipe — check the steps format.",
-      "steps_invalid": "Steps must be a non-empty list of objects."
+      "recipe_save_failed": "Failed to save recipe."
     },
     "abort": {
-      "no_recipes": "No recipes found. Add one first."
+      "no_recipes": "No recipes found. Add one first.",
+      "recipe_save_failed": "Failed to save recipe — check the steps format."
     }
   }
 }
