@@ -311,20 +311,33 @@ class RecipeExecutor:
             nonlocal machine_started
             entity_id = event.data.get("entity_id", "")
             new_state = event.data.get("new_state")
+            old_state = event.data.get("old_state")
             if new_state is None:
                 return
 
+            old_val = old_state.state if old_state else "?"
+            new_val = new_state.state
+
             if entity_id == work_state_entity:
-                if new_state.state != standby_value:
+                _LOGGER.debug(
+                    "work_state changed: %s → %s  (recipe='%s' step=%d machine_started=%s)",
+                    old_val, new_val,
+                    self._current_recipe, self._current_step, machine_started,
+                )
+                if new_val != standby_value:
                     # Machine left standby — brew started
                     machine_started = True
                     start_event.set()
                 elif machine_started:
                     # Machine returned to standby AFTER having been working — brew done
+                    _LOGGER.debug(
+                        "work_state → standby after working: signalling done  (recipe='%s' step=%d)",
+                        self._current_recipe, self._current_step,
+                    )
                     done_event.set()
 
             elif entity_id in fault_sensors:
-                if new_state.state == "on":
+                if new_val == "on":
                     fault_detected.append(f"{entity_id} = on")
                     # Unblock both stages
                     start_event.set()
@@ -344,12 +357,25 @@ class RecipeExecutor:
 
             # Check if machine has already left standby before listener was registered
             current = self.hass.states.get(work_state_entity)
+            current_val = current.state if current else "unavailable"
+            _LOGGER.debug(
+                "wait_for_completion: current work_state='%s' standby='%s'  (recipe='%s' step=%d)",
+                current_val, standby_value, self._current_recipe, self._current_step,
+            )
             if current and current.state != standby_value:
                 machine_started = True
                 start_event.set()
+                _LOGGER.debug(
+                    "Machine already working before listener registered  (recipe='%s' step=%d)",
+                    self._current_recipe, self._current_step,
+                )
 
             # ── Stage 1: wait for machine to START ──────────────────────────
             if not machine_started:
+                _LOGGER.debug(
+                    "Stage 1: waiting for machine to leave standby  (recipe='%s' step=%d timeout=%ds)",
+                    self._current_recipe, self._current_step, DEFAULT_START_TIMEOUT,
+                )
                 abort_task = self.hass.async_create_task(self._abort_event.wait())
                 start_task = self.hass.async_create_task(start_event.wait())
 
@@ -366,16 +392,24 @@ class RecipeExecutor:
                     return "abort"
 
                 if not done_s1:
-                    # Machine never left standby: it may have been instant or
-                    # missed the transition — log a warning and treat as done.
-                    _LOGGER.warning(
-                        "Machine did not leave standby within %ds after start command "
-                        "for recipe '%s' step %d — treating step as completed.",
-                        DEFAULT_START_TIMEOUT,
-                        self._current_recipe,
-                        self._current_step,
+                    # Machine never left standby within the start timeout.
+                    # This usually means the drink select option was invalid and
+                    # the machine silently ignored the start command.
+                    drink_entity = self.config["machine_drink_select"]
+                    drink_state = self.hass.states.get(drink_entity)
+                    current_option = drink_state.state if drink_state else "unknown"
+                    await self._fail(
+                        f"Machine did not start within {DEFAULT_START_TIMEOUT}s for step "
+                        f"{self._current_step} (drink='{self._current_step_drink}'). "
+                        f"Current select option is '{current_option}'. "
+                        f"Check that the drink name in the recipe exactly matches the machine's option."
                     )
-                    return "ok"
+                    return "timeout"
+
+                _LOGGER.debug(
+                    "Stage 1 done: machine left standby  (recipe='%s' step=%d)",
+                    self._current_recipe, self._current_step,
+                )
 
                 if fault_detected:
                     fault_msg = ", ".join(fault_detected)
@@ -383,6 +417,10 @@ class RecipeExecutor:
                     return "retry" if cleared else "abort"
 
             # ── Stage 2: wait for machine to FINISH ─────────────────────────
+            _LOGGER.debug(
+                "Stage 2: waiting for machine to return to standby  (recipe='%s' step=%d timeout=%ds)",
+                self._current_recipe, self._current_step, timeout,
+            )
             abort_task = self.hass.async_create_task(self._abort_event.wait())
             done_task = self.hass.async_create_task(done_event.wait())
 
@@ -407,6 +445,10 @@ class RecipeExecutor:
                 cleared = await self._wait_for_fault_clear(fault_msg)
                 return "retry" if cleared else "abort"
 
+            _LOGGER.debug(
+                "Stage 2 done: machine returned to standby  (recipe='%s' step=%d)",
+                self._current_recipe, self._current_step,
+            )
             return "ok"
 
         finally:
