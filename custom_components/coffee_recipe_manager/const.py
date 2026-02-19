@@ -20,7 +20,7 @@ DEFAULT_WORK_STATE = "sensor.coffee_machine_work_state"
 DEFAULT_DOUBLE_SWITCH = "switch.coffee_machine_double"
 DEFAULT_STANDBY_STATE = "standby"
 DEFAULT_STEP_TIMEOUT = 300  # seconds
-DEFAULT_START_TIMEOUT = 15  # seconds to wait for machine to leave standby after start command
+DEFAULT_START_TIMEOUT = 30  # seconds to wait for machine to leave standby after start command
 DEFAULT_RECIPES_FILE = "coffee_recipes.yaml"
 
 DEFAULT_FAULT_SENSORS = [

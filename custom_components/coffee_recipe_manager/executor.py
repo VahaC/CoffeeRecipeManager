@@ -338,8 +338,13 @@ class RecipeExecutor:
                     # Machine left standby — brew started
                     machine_started = True
                     start_event.set()
-                elif machine_started:
-                    # Machine returned to standby AFTER having been working — brew done
+                elif old_val != standby_value:
+                    # Machine returned to standby from a non-standby state.
+                    # Signal done regardless of machine_started — handles the case
+                    # where the HA sensor missed the standby→working transition
+                    # (e.g. fast-dispensing drinks like Hotwater that complete
+                    # before the next poll) but did catch the working→standby one.
+                    machine_started = True  # retroactively mark as started
                     _LOGGER.debug(
                         "work_state → standby after working: signalling done  (recipe='%s' step=%d)",
                         self._current_recipe, self._current_step,
@@ -380,7 +385,7 @@ class RecipeExecutor:
                     self._current_recipe, self._current_step,
                 )
 
-            # ── Stage 1: wait for machine to START ──────────────────────────
+            # ── Stage 1: wait for machine to START (or fast-complete) ───────
             if not machine_started:
                 _LOGGER.debug(
                     "Stage 1: waiting for machine to leave standby  (recipe='%s' step=%d timeout=%ds)",
@@ -388,9 +393,13 @@ class RecipeExecutor:
                 )
                 abort_task = self.hass.async_create_task(self._abort_event.wait())
                 start_task = self.hass.async_create_task(start_event.wait())
+                # Also watch done_event: fast-dispensing drinks (e.g. Hotwater)
+                # may complete before HA polls the non-standby state, so the
+                # sensor only fires once — for the working→standby transition.
+                done_task_s1 = self.hass.async_create_task(done_event.wait())
 
                 done_s1, pending_s1 = await asyncio.wait(
-                    [abort_task, start_task],
+                    [abort_task, start_task, done_task_s1],
                     timeout=DEFAULT_START_TIMEOUT,
                     return_when=asyncio.FIRST_COMPLETED,
                 )
@@ -402,9 +411,9 @@ class RecipeExecutor:
                     return "abort"
 
                 if not done_s1:
-                    # Machine never left standby within the start timeout.
-                    # This usually means the drink select option was invalid and
-                    # the machine silently ignored the start command.
+                    # Neither start nor done fired within the timeout.
+                    # Most likely cause: invalid drink name that the machine
+                    # silently ignored (select option mismatch).
                     drink_entity = self.config["machine_drink_select"]
                     drink_state = self.hass.states.get(drink_entity)
                     current_option = drink_state.state if drink_state else "unknown"
@@ -415,6 +424,15 @@ class RecipeExecutor:
                         f"Check that the drink name in the recipe exactly matches the machine's option."
                     )
                     return "timeout"
+
+                # If the done_event fired already (fast-dispense completed during
+                # Stage 1), we can skip Stage 2 entirely.
+                if done_event.is_set() and not fault_detected:
+                    _LOGGER.debug(
+                        "Stage 1: drink completed before Stage 2 (fast-dispense)  (recipe='%s' step=%d)",
+                        self._current_recipe, self._current_step,
+                    )
+                    return "ok"
 
                 _LOGGER.debug(
                     "Stage 1 done: machine left standby  (recipe='%s' step=%d)",
