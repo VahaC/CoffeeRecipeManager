@@ -238,12 +238,18 @@ class RecipeExecutor:
             # 3. Set double if needed
             double_entity = self.config.get("machine_double_switch")
             if double_entity:
-                service = "turn_on" if double else "turn_off"
-                await self.hass.services.async_call(
-                    "switch", service,
-                    {"entity_id": double_entity},
-                    blocking=True,
-                )
+                if self.hass.states.get(double_entity) is None:
+                    _LOGGER.warning(
+                        "Double switch entity '%s' not found — skipping double setting",
+                        double_entity,
+                    )
+                else:
+                    service = "turn_on" if double else "turn_off"
+                    await self.hass.services.async_call(
+                        "switch", service,
+                        {"entity_id": double_entity},
+                        blocking=True,
+                    )
 
             # Small delay to let machine accept settings
             await asyncio.sleep(1)

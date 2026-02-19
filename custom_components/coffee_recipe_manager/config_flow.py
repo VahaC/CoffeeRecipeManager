@@ -83,7 +83,6 @@ class CoffeeRecipeManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
             vol.Optional(
                 CONF_MACHINE_DOUBLE_SWITCH,
-                default=DEFAULT_DOUBLE_SWITCH,
             ): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="switch")
             ),
@@ -300,7 +299,7 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
             ),
             vol.Optional(
                 CONF_MACHINE_DOUBLE_SWITCH,
-                default=current.get(CONF_MACHINE_DOUBLE_SWITCH, DEFAULT_DOUBLE_SWITCH),
+                default=current.get(CONF_MACHINE_DOUBLE_SWITCH, ""),
             ): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="switch")
             ),

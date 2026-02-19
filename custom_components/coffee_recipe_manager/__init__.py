@@ -56,7 +56,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "machine_drink_select": config[CONF_MACHINE_DRINK_SELECT],
             "machine_start_switch": config[CONF_MACHINE_START_SWITCH],
             "machine_work_state": config[CONF_MACHINE_WORK_STATE],
-            "machine_double_switch": config.get(CONF_MACHINE_DOUBLE_SWITCH),
+            "machine_double_switch": config.get(CONF_MACHINE_DOUBLE_SWITCH) or None,
             "fault_sensors": config.get(CONF_FAULT_SENSORS, DEFAULT_FAULT_SENSORS),
             "notify_service": config.get(CONF_NOTIFY_SERVICE, "none"),
             "standby_state": DEFAULT_STANDBY_STATE,
