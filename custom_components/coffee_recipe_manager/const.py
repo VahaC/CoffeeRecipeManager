@@ -1,7 +1,7 @@
 """Constants for Coffee Recipe Manager."""
 
 DOMAIN = "coffee_recipe_manager"
-VERSION = "1.0.0"
+VERSION = "0.2.3"
 
 # Config keys
 CONF_MACHINE_DRINK_SELECT = "machine_drink_select"
@@ -20,6 +20,7 @@ DEFAULT_WORK_STATE = "sensor.coffee_machine_work_state"
 DEFAULT_DOUBLE_SWITCH = "switch.coffee_machine_double"
 DEFAULT_STANDBY_STATE = "standby"
 DEFAULT_STEP_TIMEOUT = 300  # seconds
+DEFAULT_START_TIMEOUT = 15  # seconds to wait for machine to leave standby after start command
 DEFAULT_RECIPES_FILE = "coffee_recipes.yaml"
 
 DEFAULT_FAULT_SENSORS = [

@@ -14,6 +14,7 @@ from .const import (
     BREW_STATS_STORE_KEY,
     BREW_STATS_STORE_VERSION,
     DEFAULT_STANDBY_STATE,
+    DEFAULT_START_TIMEOUT,
     DEFAULT_STEP_TIMEOUT,
     EXECUTOR_COMPLETED,
     EXECUTOR_ERROR,
@@ -271,31 +272,56 @@ class RecipeExecutor:
 
     async def _wait_for_completion(self, timeout: int) -> str:
         """
-        Wait until machine returns to standby.
-        Monitors: work_state -> standby, any fault sensor, abort event.
-        Returns: "ok" | "abort" | "timeout" | "retry" (fault was cleared, retry step).
+        Wait until machine finishes brewing and returns to standby.
+
+        Two-stage approach to avoid false "ok" when the machine is still in
+        standby for a brief moment right after the start command is issued:
+
+          Stage 1 – wait for machine to LEAVE standby (confirm brew started).
+                    Uses DEFAULT_START_TIMEOUT. If machine never leaves standby
+                    within that window, treat the step as instantly done (the
+                    machine may have already finished before the listener was
+                    registered, or the start was a no-op).
+
+          Stage 2 – wait for machine to RETURN to standby (brew finished).
+                    Uses the per-step timeout.
+
+        Monitors: work_state changes, fault sensors, abort event.
+        Returns: "ok" | "abort" | "timeout" | "retry" (fault cleared, retry step).
         """
         work_state_entity = self.config["machine_work_state"]
         standby_value = self.config.get("standby_state", DEFAULT_STANDBY_STATE)
         fault_sensors = self.config.get("fault_sensors", [])
 
+        # stage1: machine left standby (started working)
+        start_event = asyncio.Event()
+        # stage2: machine returned to standby after working
         done_event = asyncio.Event()
         fault_detected: list[str] = []
+        machine_started = False
 
         @callback
         def _state_listener(event):
+            nonlocal machine_started
             entity_id = event.data.get("entity_id", "")
             new_state = event.data.get("new_state")
             if new_state is None:
                 return
 
             if entity_id == work_state_entity:
-                if new_state.state == standby_value:
+                if new_state.state != standby_value:
+                    # Machine left standby — brew started
+                    machine_started = True
+                    start_event.set()
+                elif machine_started:
+                    # Machine returned to standby AFTER having been working — brew done
                     done_event.set()
 
             elif entity_id in fault_sensors:
                 if new_state.state == "on":
                     fault_detected.append(f"{entity_id} = on")
+                    # Unblock both stages
+                    start_event.set()
                     done_event.set()
 
         entities_to_watch = [work_state_entity] + list(fault_sensors)
@@ -304,32 +330,66 @@ class RecipeExecutor:
         )
 
         try:
-            # Also check current state immediately (machine may already be standby)
-            current = self.hass.states.get(work_state_entity)
-            if current and current.state == standby_value:
-                return "ok"
-
-            # Check faults immediately
+            # Check faults immediately before waiting
             fault = self._get_active_fault()
             if fault:
                 cleared = await self._wait_for_fault_clear(fault)
                 return "retry" if cleared else "abort"
 
-            # Wait with timeout
+            # Check if machine has already left standby before listener was registered
+            current = self.hass.states.get(work_state_entity)
+            if current and current.state != standby_value:
+                machine_started = True
+                start_event.set()
+
+            # ── Stage 1: wait for machine to START ──────────────────────────
+            if not machine_started:
+                abort_task = self.hass.async_create_task(self._abort_event.wait())
+                start_task = self.hass.async_create_task(start_event.wait())
+
+                done_s1, pending_s1 = await asyncio.wait(
+                    [abort_task, start_task],
+                    timeout=DEFAULT_START_TIMEOUT,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                for t in pending_s1:
+                    t.cancel()
+
+                if self._abort_event.is_set():
+                    self._set_status(EXECUTOR_IDLE)
+                    return "abort"
+
+                if not done_s1:
+                    # Machine never left standby: it may have been instant or
+                    # missed the transition — log a warning and treat as done.
+                    _LOGGER.warning(
+                        "Machine did not leave standby within %ds after start command "
+                        "for recipe '%s' step %d — treating step as completed.",
+                        DEFAULT_START_TIMEOUT,
+                        self._current_recipe,
+                        self._current_step,
+                    )
+                    return "ok"
+
+                if fault_detected:
+                    fault_msg = ", ".join(fault_detected)
+                    cleared = await self._wait_for_fault_clear(fault_msg)
+                    return "retry" if cleared else "abort"
+
+            # ── Stage 2: wait for machine to FINISH ─────────────────────────
             abort_task = self.hass.async_create_task(self._abort_event.wait())
             done_task = self.hass.async_create_task(done_event.wait())
 
-            done, pending = await asyncio.wait(
+            done_s2, pending_s2 = await asyncio.wait(
                 [abort_task, done_task],
                 timeout=timeout,
                 return_when=asyncio.FIRST_COMPLETED,
             )
-
-            for t in pending:
+            for t in pending_s2:
                 t.cancel()
 
-            if not done:
-                await self._fail(f"Timeout after {timeout}s waiting for machine")
+            if not done_s2:
+                await self._fail(f"Timeout after {timeout}s waiting for machine to finish")
                 return "timeout"
 
             if self._abort_event.is_set():
