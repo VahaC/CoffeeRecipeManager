@@ -212,6 +212,17 @@ class RecipeExecutor:
             _LOGGER.warning("Step has no 'drink' field, skipping: %s", step)
             return True
 
+        # Resolve drink name case-insensitively against the actual select entity options.
+        # This tolerates minor capitalisation differences in recipes (e.g. "Hotmilk" vs "HotMilk").
+        drink_entity = self.config["machine_drink_select"]
+        drink = self._resolve_drink_option(drink, drink_entity)
+        if drink is None:
+            await self._fail(
+                f"Drink '{step.get('drink')}' not found in select entity '{drink_entity}'. "
+                f"Valid options: {self._get_drink_options(drink_entity)}"
+            )
+            return False
+
         while True:
             if self._abort_event.is_set():
                 self._set_status(EXECUTOR_IDLE)
@@ -228,7 +239,6 @@ class RecipeExecutor:
             # 2. Select drink
             self._current_step_drink = drink
             self._set_status(EXECUTOR_RUNNING)
-            drink_entity = self.config["machine_drink_select"]
             await self.hass.services.async_call(
                 "select", "select_option",
                 {"entity_id": drink_entity, "option": drink},
@@ -584,6 +594,41 @@ class RecipeExecutor:
         self._status = status
         if self.on_state_change:
             self.on_state_change()
+
+    def _get_drink_options(self, drink_entity: str) -> list[str]:
+        """Return the list of valid options from the select entity."""
+        state = self.hass.states.get(drink_entity)
+        if state:
+            return list(state.attributes.get("options", []))
+        return []
+
+    def _resolve_drink_option(self, drink: str, drink_entity: str) -> str | None:
+        """
+        Return the correctly-cased option name for *drink* from the select entity.
+        Tries exact match first, then case-insensitive. Returns None if not found.
+        """
+        options = self._get_drink_options(drink_entity)
+        if not options:
+            # Entity unavailable — can't validate; pass through as-is and let HA decide
+            _LOGGER.warning(
+                "Could not read options from '%s' — using drink name as-is: %s",
+                drink_entity, drink,
+            )
+            return drink
+        # Exact match
+        if drink in options:
+            return drink
+        # Case-insensitive match
+        drink_lower = drink.lower()
+        for opt in options:
+            if opt.lower() == drink_lower:
+                _LOGGER.warning(
+                    "Drink name '%s' matched to '%s' (case-insensitive). "
+                    "Update the recipe to use the exact name.",
+                    drink, opt,
+                )
+                return opt
+        return None
 
     def _cleanup(self) -> None:
         self._current_step_drink = None
