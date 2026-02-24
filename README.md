@@ -5,7 +5,8 @@ A Home Assistant custom integration for brewing custom multi-step coffee recipes
 ## Features
 
 - 🧾 Define recipes with multiple steps (e.g. Macchiato → Americano)
-- 🗂️ Manage recipes directly from the HA UI — no YAML editing required
+- � Two step types: **Drink** (select + double + timeout) and **Switch** (activate any switch entity directly — milk frothing, hot water, espresso shot, etc.)
+- �🗂️ Manage recipes directly from the HA UI — no YAML editing required
 - 🛡️ Fault monitoring — pauses recipe and **auto-resumes** after fault is cleared
 - 📱 Notifications — persistent HA notification + optional mobile push
 - 🖥️ Config Flow — full UI setup, no YAML editing required for setup
@@ -49,25 +50,13 @@ Three actions are available:
 
 1. Click **Configure** on the integration card
 2. Choose **Manage recipes → Add new recipe**
-3. Fill in:
-   - **Recipe name** — human-readable name (e.g. `Morning Boost`)
-   - **Description** — optional
-   - **Steps** — list of steps in YAML/object format:
-
-```yaml
-- drink: LatteMacchiato
-  double: false
-  timeout: 300
-- drink: Americano
-  double: false
-  timeout: 300
-```
-
-  You can also use direct **switch steps** — select `Switch` as the step type
-  and enter the entity ID (e.g. `switch.coffee_machine_milkfrothing`).
-  See [Step types](#step-types) below for reference.
-
-4. Click **Submit** — the recipe is saved immediately
+3. Fill in **Recipe name** and optional **Description**, then click **Submit**
+4. For each step, fill in:
+   - **Step type** — `Drink` or `Switch`
+   - **Drink step**: select the drink from the dropdown, toggle **Double portion**, set **Timeout**
+   - **Switch step**: enter the full switch entity ID (e.g. `switch.coffee_machine_milkfrothing`), set **Timeout**
+   - **Add another step** — enable to continue adding more steps
+5. On the last step disable **Add another step** and click **Submit** — the recipe is saved immediately
 
 The recipe key (used in automations) is auto-generated from the name, e.g. `Morning Boost` → `morning_boost`.
 
@@ -75,8 +64,9 @@ The recipe key (used in automations) is auto-generated from the name, e.g. `Morn
 
 1. Choose **Manage recipes → Edit recipe**
 2. Select the recipe from the dropdown
-3. Modify name, description, or steps
-4. Click **Submit**
+3. Modify name and description, then step through all steps one by one
+   (the form pre-fills existing values, including the correct step type for switch steps)
+4. Click **Submit** on the last step
 
 #### 🗑️ Delete recipe
 

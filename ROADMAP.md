@@ -36,6 +36,15 @@ if a step contains a drink not present in the configured `drink_options`.
 
 ---
 
+### ✅ v0.3.1 — Switch steps in the recipe UI *(released 2026-02-24)*
+
+- **Step type selector in the recipe form** — The Add and Edit recipe step
+  forms now have a `Drink` / `Switch` selector. When `Switch` is chosen, a
+  text field accepts any switch entity ID with live validation. Existing switch
+  steps pre-fill correctly when editing.
+
+---
+
 ### 4. Fault wait timeout (`max_fault_wait`)
 Currently the integration waits forever when a fault occurs.  
 Add configurable `max_fault_wait` (minutes, default: 30).  
