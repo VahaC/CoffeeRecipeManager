@@ -384,17 +384,34 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
     async def async_step_recipe_step(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        """Collect one drink step, optionally loop for more."""
+        """Collect one step (drink or switch), optionally loop for more."""
+        errors: dict[str, str] = {}
+
         if user_input is not None:
-            self._recipe_steps.append({
-                "drink": user_input["drink"],
-                "double": bool(user_input.get("double", False)),
-                "timeout": int(user_input.get("timeout", 300)),
-            })
-            self._step_index += 1
-            if user_input.get("add_another", False):
-                return await self.async_step_recipe_step()
-            return await self._save_current_recipe()
+            step_type = user_input.get("step_type", "drink")
+            if step_type == "switch":
+                switch_entity = (user_input.get("switch_entity") or "").strip()
+                if not switch_entity:
+                    errors["switch_entity"] = "switch_entity_required"
+                elif not self.hass.states.get(switch_entity):
+                    errors["switch_entity"] = "entity_not_found"
+                else:
+                    self._recipe_steps.append({
+                        "switch": switch_entity,
+                        "timeout": int(user_input.get("timeout", 300)),
+                    })
+            else:
+                self._recipe_steps.append({
+                    "drink": user_input["drink"],
+                    "double": bool(user_input.get("double", False)),
+                    "timeout": int(user_input.get("timeout", 300)),
+                })
+
+            if not errors:
+                self._step_index += 1
+                if user_input.get("add_another", False):
+                    return await self.async_step_recipe_step()
+                return await self._save_current_recipe()
 
         # Pre-fill with existing step when editing
         prefill: dict = {}
@@ -407,6 +424,10 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
             and self._step_index + 1 < len(self._step_prefill)
         )
 
+        # Determine prefill step type
+        is_switch_prefill = "switch" in prefill
+        default_step_type = "switch" if is_switch_prefill else "drink"
+
         # Use configured drinks for this machine, fall back to machine entity options
         current_config = {**self._config_entry.data, **self._config_entry.options}
         configured_drinks = current_config.get(
@@ -417,8 +438,19 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
             selector.SelectOptionDict(value=d, label=d) for d in configured_drinks
         ]
         default_drink = prefill.get("drink") or (configured_drinks[0] if configured_drinks else "Espresso")
+        default_switch = prefill.get("switch", "") if is_switch_prefill else ""
 
         schema = vol.Schema({
+            vol.Required("step_type", default=default_step_type):
+                selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value="drink", label="Drink"),
+                            selector.SelectOptionDict(value="switch", label="Switch"),
+                        ],
+                        mode=selector.SelectSelectorMode.LIST,
+                    )
+                ),
             vol.Required("drink", default=default_drink):
                 selector.SelectSelector(
                     selector.SelectSelectorConfig(
@@ -428,6 +460,10 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
                 ),
             vol.Optional("double", default=bool(prefill.get("double", False))):
                 selector.BooleanSelector(),
+            vol.Optional("switch_entity", default=default_switch):
+                selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
+                ),
             vol.Optional("timeout", default=int(prefill.get("timeout", 300))):
                 selector.NumberSelector(
                     selector.NumberSelectorConfig(
@@ -443,6 +479,7 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="recipe_step",
             data_schema=schema,
+            errors=errors,
             description_placeholders={
                 "step_num": str(self._step_index + 1),
                 "recipe_name": self._recipe_name,

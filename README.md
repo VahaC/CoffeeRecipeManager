@@ -63,7 +63,9 @@ Three actions are available:
   timeout: 300
 ```
 
-  You can also use direct **switch steps** (see [Recipes via YAML](#recipes-via-yaml) below).
+  You can also use direct **switch steps** — select `Switch` as the step type
+  and enter the entity ID (e.g. `switch.coffee_machine_milkfrothing`).
+  See [Step types](#step-types) below for reference.
 
 4. Click **Submit** — the recipe is saved immediately
 

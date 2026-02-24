@@ -136,3 +136,4 @@ Registered automatically by the integration — no manual resource setup.
 | v0.2.3 | Fix premature recipe completion and skipped steps (two-stage completion wait) |
 | v0.2.4 | Fix drink name case mismatch, fix `machine_double_switch` not truly optional, add detailed debug logging |
 | v0.3.0 | Direct switch steps in recipes (`switch:` field), completion tracking via start switch instead of work state sensor |
+| v0.3.1 | Switch step type added to the recipe UI (Add / Edit flows) |

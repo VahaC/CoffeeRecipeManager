@@ -84,12 +84,17 @@
       },
       "recipe_step": {
         "title": "Step {step_num} — {recipe_name}",
-        "description": "Choose the drink for this step.",
+        "description": "Choose the step type. **Drink** — select a drink from the machine. **Switch** — activate a switch directly (e.g. milk frothing, hot water, espresso shot).",
         "data": {
-          "drink": "Drink",
-          "double": "Double portion",
+          "step_type": "Step type",
+          "drink": "Drink (for Drink steps)",
+          "double": "Double portion (for Drink steps)",
+          "switch_entity": "Switch entity ID (for Switch steps, e.g. switch.coffee_machine_milkfrothing)",
           "timeout": "Timeout (seconds)",
           "add_another": "Add another step after this one"
+        },
+        "data_description": {
+          "switch_entity": "Full entity ID of the switch to activate, e.g. switch.coffee_machine_milkfrothing"
         }
       },
       "recipe_edit_select": {
@@ -116,7 +121,9 @@
       }
     },
     "error": {
-      "recipe_save_failed": "Failed to save recipe."
+      "recipe_save_failed": "Failed to save recipe.",
+      "switch_entity_required": "Switch entity ID is required for Switch steps.",
+      "entity_not_found": "Entity not found. Check the entity ID."
     },
     "abort": {
       "no_recipes": "No recipes found. Add one first.",

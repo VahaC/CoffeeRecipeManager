@@ -4,6 +4,24 @@ All notable changes to Coffee Recipe Manager are documented here.
 
 ---
 
+## [0.3.1] — 2026-02-24
+
+### Improvements
+
+- **Switch steps available in the UI** — The recipe step form now includes a
+  **Step type** selector (`Drink` / `Switch`). When `Switch` is selected, a
+  plain text field accepts any switch entity ID (e.g.
+  `switch.coffee_machine_milkfrothing`, `switch.coffee_machine_hotwaterdispensing`,
+  `switch.coffee_machine_espressoshot`). The entity is validated against
+  `hass.states` before the step is saved — a descriptive inline error is shown
+  if the entity is not found. The existing drink/double/timeout fields remain
+  unchanged for `Drink` steps.
+
+  Both **Add recipe** and **Edit recipe** flows support the new step type,
+  including correct pre-filling when editing an existing switch step.
+
+---
+
 ## [0.3.0] — 2026-02-24
 
 ### New Features
