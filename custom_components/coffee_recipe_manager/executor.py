@@ -242,6 +242,10 @@ class RecipeExecutor:
             # Execute each switch the required number of times, in sequence
             for entity_id, count in switch_runs:
                 for run_num in range(count):
+                    # Brief pause between repeated runs so the machine settles.
+                    if run_num > 0:
+                        await asyncio.sleep(1)
+
                     while True:
                         if self._abort_event.is_set():
                             self._set_status(EXECUTOR_IDLE)
@@ -256,13 +260,10 @@ class RecipeExecutor:
 
                         self._current_step_drink = entity_id
                         self._set_status(EXECUTOR_RUNNING)
-                        await self.hass.services.async_call(
-                            "switch", "turn_on",
-                            {"entity_id": entity_id},
-                            blocking=True,
-                        )
 
-                        result = await self._wait_for_completion(timeout, start_entity=entity_id)
+                        # Register the completion listener BEFORE calling turn_on
+                        # so we never miss a fast ON→OFF cycle.
+                        result = await self._run_switch_once(entity_id, timeout)
 
                         if result == "ok":
                             break  # next run / next switch
@@ -354,6 +355,165 @@ class RecipeExecutor:
                 continue
             else:  # "abort" or "timeout"
                 return False
+
+    async def _run_switch_once(self, entity_id: str, timeout: int) -> str:
+        """
+        Turn on an auxiliary switch and wait for it to complete (turn OFF).
+
+        The state listener is registered BEFORE calling turn_on to avoid missing
+        fast ON→OFF cycles where the machine acknowledges and completes the command
+        before a listener registered after turn_on would see any events.
+
+        Returns: "ok" | "abort" | "timeout" | "retry"
+        """
+        fault_sensors = self.config.get("fault_sensors", [])
+
+        started_event = asyncio.Event()   # switch turned ON
+        done_event = asyncio.Event()      # switch turned OFF after being ON
+        fault_detected: list[str] = []
+        machine_started = False
+
+        @callback
+        def _state_listener(event):
+            nonlocal machine_started
+            entity = event.data.get("entity_id", "")
+            new_state = event.data.get("new_state")
+            if new_state is None:
+                return
+            val = new_state.state
+
+            if entity == entity_id:
+                _LOGGER.debug(
+                    "_run_switch_once: %s → %s  (recipe='%s' step=%d)",
+                    event.data.get("old_state", {}).state if event.data.get("old_state") else "?",
+                    val, self._current_recipe, self._current_step,
+                )
+                if val == "on":
+                    machine_started = True
+                    started_event.set()
+                elif val == "off":
+                    # Retroactively mark started if we missed the ON event
+                    machine_started = True
+                    started_event.set()
+                    done_event.set()
+            elif entity in fault_sensors and val == "on":
+                fault_detected.append(f"{entity} = on")
+                started_event.set()
+                done_event.set()
+
+        entities_to_watch = [entity_id] + list(fault_sensors)
+        unsub = async_track_state_change_event(
+            self.hass, entities_to_watch, _state_listener
+        )
+
+        try:
+            # Check faults before starting
+            fault = self._get_active_fault()
+            if fault:
+                cleared = await self._wait_for_fault_clear(fault)
+                return "retry" if cleared else "abort"
+
+            # Pre-check: if already ON when listener was registered (shouldn't
+            # normally happen before turn_on, but guard against stale state)
+            current = self.hass.states.get(entity_id)
+            if current and current.state == "on":
+                machine_started = True
+                started_event.set()
+
+            # ── Turn the switch ON (listener is already watching) ───────────
+            await self.hass.services.async_call(
+                "switch", "turn_on",
+                {"entity_id": entity_id},
+                blocking=True,
+            )
+
+            # After blocking turn_on the state should be updated; if still OFF,
+            # the listener will catch the incoming ON event.
+            if not machine_started:
+                current_after = self.hass.states.get(entity_id)
+                if current_after and current_after.state == "on":
+                    machine_started = True
+                    started_event.set()
+
+            # ── Stage 1: wait for switch ON ─────────────────────────────────
+            if not machine_started:
+                abort_task = self.hass.async_create_task(self._abort_event.wait())
+                start_task = self.hass.async_create_task(started_event.wait())
+                done_task = self.hass.async_create_task(done_event.wait())
+
+                done_s1, pending = await asyncio.wait(
+                    [abort_task, start_task, done_task],
+                    timeout=DEFAULT_START_TIMEOUT,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                for t in pending:
+                    t.cancel()
+
+                if self._abort_event.is_set():
+                    self._set_status(EXECUTOR_IDLE)
+                    return "abort"
+
+                if not done_s1:
+                    await self._fail(
+                        f"Switch '{entity_id}' did not turn ON within {DEFAULT_START_TIMEOUT}s "
+                        f"for step {self._current_step}. "
+                        f"Check that the entity ID is correct and the machine is responsive."
+                    )
+                    return "timeout"
+
+                if fault_detected:
+                    cleared = await self._wait_for_fault_clear(", ".join(fault_detected))
+                    return "retry" if cleared else "abort"
+
+                # Fast complete: switch went ON then OFF within Stage 1
+                if done_event.is_set():
+                    _LOGGER.debug(
+                        "_run_switch_once: fast complete in Stage 1  (recipe='%s' step=%d)",
+                        self._current_recipe, self._current_step,
+                    )
+                    return "ok"
+
+            # ── Stage 2: wait for switch OFF ─────────────────────────────────
+            _LOGGER.debug(
+                "_run_switch_once: Stage 2 waiting for OFF  (recipe='%s' step=%d timeout=%ds)",
+                self._current_recipe, self._current_step, timeout,
+            )
+
+            # If the switch already went OFF during Stage 1 processing above
+            if done_event.is_set() and not fault_detected:
+                return "ok"
+
+            abort_task = self.hass.async_create_task(self._abort_event.wait())
+            done_task = self.hass.async_create_task(done_event.wait())
+
+            done_s2, pending = await asyncio.wait(
+                [abort_task, done_task],
+                timeout=timeout,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for t in pending:
+                t.cancel()
+
+            if not done_s2:
+                await self._fail(f"Timeout after {timeout}s waiting for switch '{entity_id}' to finish")
+                return "timeout"
+
+            if self._abort_event.is_set():
+                self._set_status(EXECUTOR_IDLE)
+                return "abort"
+
+            if fault_detected:
+                cleared = await self._wait_for_fault_clear(", ".join(fault_detected))
+                return "retry" if cleared else "abort"
+
+            _LOGGER.debug(
+                "_run_switch_once: done OK  (recipe='%s' step=%d)",
+                self._current_recipe, self._current_step,
+            )
+            return "ok"
+
+        finally:
+            unsub()
 
     async def _wait_for_completion(self, timeout: int, start_entity: str | None = None) -> str:
         """

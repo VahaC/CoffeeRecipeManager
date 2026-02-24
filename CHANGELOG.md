@@ -4,6 +4,30 @@ All notable changes to Coffee Recipe Manager are documented here.
 
 ---
 
+## [0.3.7] — 2026-02-24
+
+### Bug Fixes
+
+- **Fix: auxiliary switch repeat count — machine ran only N=1 instead of N** —
+  Root cause: the state change listener for switch completion was registered
+  **after** `turn_on` was called. If the machine acknowledged and completed the
+  command faster than HA could attach the listener (common with fast-dispensing
+  switches), the ON+OFF events were both missed. The listener would then wait
+  in Stage 1 until `DEFAULT_START_TIMEOUT` (30s), fail, and stop the recipe —
+  meaning only the first run ever succeeded.
+
+  Fix: extracted a new `_run_switch_once` helper that registers the state listener
+  **before** calling `turn_on`. Handles all edge cases:
+  - Normal: ON → OFF sequence fully captured
+  - Fast complete: switch cycles ON→OFF before Stage 2 (returned as "ok" in Stage 1)
+  - Retroactive: only OFF event captured (ON was too fast), treated as fast-complete
+  - Fault handling and abort event monitored throughout
+
+  A 1-second inter-run sleep is retained to give the machine time to settle
+  between successive activations.
+
+---
+
 ## [0.3.6] — 2026-02-24
 
 ### Bug Fixes

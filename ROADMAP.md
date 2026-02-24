@@ -99,6 +99,18 @@ if a step contains a drink not present in the configured `drink_options`.
 
 ---
 
+### ✅ v0.3.7 — Fix auxiliary switch repeat count *(released 2026-02-24)*
+
+- **Root cause fixed**: the state listener for switch completion was registered
+  **after** `turn_on`, causing fast ON→OFF cycles to be entirely missed. The recipe
+  would wait `DEFAULT_START_TIMEOUT` (30s), fail, and stop — so only the first run
+  ever completed when `switch_counts > 1`.
+- New `_run_switch_once` helper registers the listener **before** calling `turn_on`,
+  handles fast-complete, retroactive OFF detection, fault monitoring and abort.
+- 1-second inter-run sleep retained for machine settle time between repeats.
+
+---
+
 ### 4. Fault wait timeout (`max_fault_wait`)
 Currently the integration waits forever when a fault occurs.  
 Add configurable `max_fault_wait` (minutes, default: 30).  
@@ -205,3 +217,4 @@ Registered automatically by the integration — no manual resource setup.
 | v0.3.4 | Show entity friendly names under auxiliary switch count fields in recipe step form |
 | v0.3.5 | Use friendly names as field labels (not just descriptions) for auxiliary switch count fields |
 | v0.3.6 | Fix View Selected Recipe / get_recipe service to correctly render switch steps and switch_counts format |
+| v0.3.7 | Fix auxiliary switch repeat count: listener now registered before turn_on to prevent missed ON/OFF events |
