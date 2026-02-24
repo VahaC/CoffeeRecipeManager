@@ -241,8 +241,16 @@ class RecipeExecutor:
 
             # Execute each switch the required number of times, in sequence
             for entity_id, count in switch_runs:
+                _LOGGER.warning(
+                    "[CRM] switch loop START: entity=%s count=%d timeout=%d recipe='%s' step=%d",
+                    entity_id, count, timeout, self._current_recipe, self._current_step,
+                )
                 for run_num in range(count):
                     run_start = self.hass.loop.time()
+                    _LOGGER.warning(
+                        "[CRM] run %d/%d BEGIN entity=%s",
+                        run_num + 1, count, entity_id,
+                    )
 
                     while True:
                         if self._abort_event.is_set():
@@ -259,39 +267,49 @@ class RecipeExecutor:
                         self._current_step_drink = entity_id
                         self._set_status(EXECUTOR_RUNNING)
 
-                        # Register the completion listener BEFORE calling turn_on
-                        # so we never miss a fast ON→OFF cycle.
+                        _LOGGER.warning(
+                            "[CRM] calling _run_switch_once entity=%s run %d/%d",
+                            entity_id, run_num + 1, count,
+                        )
                         result = await self._run_switch_once(entity_id, timeout)
+                        _LOGGER.warning(
+                            "[CRM] _run_switch_once returned '%s' entity=%s run %d/%d",
+                            result, entity_id, run_num + 1, count,
+                        )
 
                         if result == "ok":
                             break  # next run / next switch
                         elif result == "retry":
-                            _LOGGER.info(
-                                "Recipe '%s' step %d: fault cleared, restarting switch '%s' (run %d/%d)",
-                                self._current_recipe, self._current_step, entity_id, run_num + 1, count,
+                            _LOGGER.warning(
+                                "[CRM] fault cleared, restarting switch '%s' (run %d/%d)",
+                                entity_id, run_num + 1, count,
                             )
                             continue
                         else:
                             return False
 
-                    # Between repeated runs: wait long enough for the physical
-                    # operation to finish before sending the next trigger.
-                    #
-                    # Momentary switches (ON→OFF in < 1s): _run_switch_once
-                    # returns almost immediately, so we sleep ≈ timeout seconds
-                    # to let the machine complete the physical action (e.g. hot
-                    # water dispensing).
-                    #
-                    # State-based switches (ON for the full duration): elapsed ≈
-                    # timeout already, so inter_run_delay ≈ 1s (settle time only).
+                    run_elapsed = self.hass.loop.time() - run_start
+                    _LOGGER.warning(
+                        "[CRM] run %d/%d DONE entity=%s elapsed=%.2fs",
+                        run_num + 1, count, entity_id, run_elapsed,
+                    )
+
                     if run_num < count - 1:
-                        run_elapsed = self.hass.loop.time() - run_start
                         inter_run_delay = max(1.0, float(timeout) - run_elapsed)
-                        _LOGGER.debug(
-                            "Inter-run delay: %.1fs (timeout=%ds, elapsed=%.1fs) entity=%s run %d/%d",
-                            inter_run_delay, timeout, run_elapsed, entity_id, run_num + 1, count,
+                        _LOGGER.warning(
+                            "[CRM] sleeping inter-run delay %.1fs (timeout=%ds, elapsed=%.2fs) before run %d/%d entity=%s",
+                            inter_run_delay, timeout, run_elapsed, run_num + 2, count, entity_id,
                         )
                         await asyncio.sleep(inter_run_delay)
+                        _LOGGER.warning(
+                            "[CRM] inter-run sleep DONE, starting run %d/%d entity=%s",
+                            run_num + 2, count, entity_id,
+                        )
+
+                _LOGGER.warning(
+                    "[CRM] switch loop END: entity=%s all %d runs complete",
+                    entity_id, count,
+                )
 
         # ── Drink step ──────────────────────────────────────────────────────
         if not drink:
@@ -405,6 +423,12 @@ class RecipeExecutor:
                     event.data.get("old_state", {}).state if event.data.get("old_state") else "?",
                     val, self._current_recipe, self._current_step,
                 )
+                _LOGGER.warning(
+                    "[CRM] state_listener: entity=%s old=%s new=%s machine_started=%s",
+                    entity,
+                    event.data.get("old_state").state if event.data.get("old_state") else "?",
+                    val, machine_started,
+                )
                 if val == "on":
                     machine_started = True
                     started_event.set()
@@ -430,14 +454,18 @@ class RecipeExecutor:
                 cleared = await self._wait_for_fault_clear(fault)
                 return "retry" if cleared else "abort"
 
-            # Pre-check: if already ON when listener was registered (shouldn't
-            # normally happen before turn_on, but guard against stale state)
+            # Pre-check: if already ON when listener was registered
             current = self.hass.states.get(entity_id)
+            _LOGGER.warning(
+                "[CRM] _run_switch_once PRE-CHECK entity=%s state=%s",
+                entity_id, current.state if current else "unavailable",
+            )
             if current and current.state == "on":
                 machine_started = True
                 started_event.set()
 
             # ── Turn the switch ON (listener is already watching) ───────────
+            _LOGGER.warning("[CRM] calling turn_on entity=%s", entity_id)
             await self.hass.services.async_call(
                 "switch", "turn_on",
                 {"entity_id": entity_id},
@@ -446,14 +474,22 @@ class RecipeExecutor:
 
             # After blocking turn_on the state should be updated; if still OFF,
             # the listener will catch the incoming ON event.
+            current_after = self.hass.states.get(entity_id)
+            _LOGGER.warning(
+                "[CRM] after turn_on entity=%s state=%s machine_started=%s",
+                entity_id, current_after.state if current_after else "unavailable", machine_started,
+            )
             if not machine_started:
-                current_after = self.hass.states.get(entity_id)
                 if current_after and current_after.state == "on":
                     machine_started = True
                     started_event.set()
 
             # ── Stage 1: wait for switch ON ─────────────────────────────────
             if not machine_started:
+                _LOGGER.warning(
+                    "[CRM] Stage 1: waiting up to %ds for switch ON entity=%s",
+                    DEFAULT_START_TIMEOUT, entity_id,
+                )
                 abort_task = self.hass.async_create_task(self._abort_event.wait())
                 start_task = self.hass.async_create_task(started_event.wait())
                 done_task = self.hass.async_create_task(done_event.wait())
@@ -465,6 +501,11 @@ class RecipeExecutor:
                 )
                 for t in pending:
                     t.cancel()
+
+                _LOGGER.warning(
+                    "[CRM] Stage 1 finished: abort=%s done_s1_count=%d machine_started=%s done_event=%s fault=%s",
+                    self._abort_event.is_set(), len(done_s1), machine_started, done_event.is_set(), fault_detected,
+                )
 
                 if self._abort_event.is_set():
                     self._set_status(EXECUTOR_IDLE)
@@ -484,20 +525,26 @@ class RecipeExecutor:
 
                 # Fast complete: switch went ON then OFF within Stage 1
                 if done_event.is_set():
-                    _LOGGER.debug(
-                        "_run_switch_once: fast complete in Stage 1  (recipe='%s' step=%d)",
-                        self._current_recipe, self._current_step,
+                    _LOGGER.warning(
+                        "[CRM] fast complete in Stage 1 entity=%s",
+                        entity_id,
                     )
                     return "ok"
+            else:
+                _LOGGER.warning(
+                    "[CRM] skipping Stage 1 (machine_started=True already) entity=%s",
+                    entity_id,
+                )
 
             # ── Stage 2: wait for switch OFF ─────────────────────────────────
-            _LOGGER.debug(
-                "_run_switch_once: Stage 2 waiting for OFF  (recipe='%s' step=%d timeout=%ds)",
-                self._current_recipe, self._current_step, timeout,
+            _LOGGER.warning(
+                "[CRM] Stage 2: waiting up to %ds for switch OFF entity=%s done_event_already=%s",
+                timeout, entity_id, done_event.is_set(),
             )
 
             # If the switch already went OFF during Stage 1 processing above
             if done_event.is_set() and not fault_detected:
+                _LOGGER.warning("[CRM] Stage 2: early return (done during Stage 1) entity=%s", entity_id)
                 return "ok"
 
             abort_task = self.hass.async_create_task(self._abort_event.wait())
@@ -523,9 +570,9 @@ class RecipeExecutor:
                 cleared = await self._wait_for_fault_clear(", ".join(fault_detected))
                 return "retry" if cleared else "abort"
 
-            _LOGGER.debug(
-                "_run_switch_once: done OK  (recipe='%s' step=%d)",
-                self._current_recipe, self._current_step,
+            _LOGGER.warning(
+                "[CRM] Stage 2: done OK entity=%s",
+                entity_id,
             )
             return "ok"
 
