@@ -295,16 +295,13 @@ class RecipeExecutor:
                     )
 
                     if run_num < count - 1:
-                        inter_run_delay = max(1.0, float(timeout) - run_elapsed)
+                        # _run_switch_once already waited for full completion
+                        # (both aux+machine_start ON→OFF), so just a short settle pause.
                         _LOGGER.warning(
-                            "[CRM] sleeping inter-run delay %.1fs (timeout=%ds, elapsed=%.2fs) before run %d/%d entity=%s",
-                            inter_run_delay, timeout, run_elapsed, run_num + 2, count, entity_id,
-                        )
-                        await asyncio.sleep(inter_run_delay)
-                        _LOGGER.warning(
-                            "[CRM] inter-run sleep DONE, starting run %d/%d entity=%s",
+                            "[CRM] inter-run settle 3s before run %d/%d entity=%s",
                             run_num + 2, count, entity_id,
                         )
+                        await asyncio.sleep(3)
 
                 _LOGGER.warning(
                     "[CRM] switch loop END: entity=%s all %d runs complete",
@@ -409,35 +406,43 @@ class RecipeExecutor:
         machine_start_entity = self.config["machine_start_switch"]
         fault_sensors = self.config.get("fault_sensors", [])
 
-        done_event = asyncio.Event()   # BOTH aux switch OFF AND machine_start OFF
+        done_event = asyncio.Event()   # BOTH aux switch AND machine_start completed (ON→OFF)
         fault_detected: list[str] = []
-        aux_off = False
-        machine_start_off = False
+        # Each entity transitions: unknown → on → done (off after being on).
+        # An entity that starts OFF (idle) is "unknown", not "done".
+        aux_state = "unknown"        # "unknown" | "on" | "done"
+        machine_start_state = "unknown"
 
         @callback
         def _state_listener(event):
-            nonlocal aux_off, machine_start_off
+            nonlocal aux_state, machine_start_state
             entity = event.data.get("entity_id", "")
             new_state = event.data.get("new_state")
             if new_state is None:
                 return
             val = new_state.state
             _LOGGER.warning(
-                "[CRM] state_listener: entity=%s old=%s new=%s aux_off=%s machine_start_off=%s",
+                "[CRM] state_listener: entity=%s old=%s new=%s aux_state=%s ms_state=%s",
                 entity,
                 event.data.get("old_state").state if event.data.get("old_state") else "?",
-                val, aux_off, machine_start_off,
+                val, aux_state, machine_start_state,
             )
-            if entity == entity_id and val == "off":
-                aux_off = True
-            elif entity == machine_start_entity and val == "off":
-                machine_start_off = True
+            if entity == entity_id:
+                if val == "on":
+                    aux_state = "on"
+                elif val == "off" and aux_state == "on":
+                    aux_state = "done"
+            elif entity == machine_start_entity:
+                if val == "on":
+                    machine_start_state = "on"
+                elif val == "off" and machine_start_state == "on":
+                    machine_start_state = "done"
             elif entity in fault_sensors and val == "on":
                 fault_detected.append(f"{entity} = on")
                 done_event.set()
                 return
-            if aux_off and machine_start_off:
-                _LOGGER.warning("[CRM] both aux and machine_start are OFF → done")
+            if aux_state == "done" and machine_start_state == "done":
+                _LOGGER.warning("[CRM] both aux and machine_start completed (ON→OFF) → done")
                 done_event.set()
 
         entities_to_watch = [entity_id, machine_start_entity] + list(fault_sensors)
@@ -458,13 +463,14 @@ class RecipeExecutor:
                 aux.state if aux else "unavailable",
                 ms.state if ms else "unavailable",
             )
-            # Pre-set flags for already-OFF state before listener was registered
-            if aux and aux.state == "off":
-                aux_off = True
-            if ms and ms.state == "off":
-                machine_start_off = True
-            if aux_off and machine_start_off:
-                done_event.set()
+            # If already ON before turn_on (e.g. machine is mid-operation from a
+            # previous run) — mark as "on" so the upcoming OFF transition is recognised.
+            if aux and aux.state == "on":
+                aux_state = "on"
+            if ms and ms.state == "on":
+                machine_start_state = "on"
+            # Note: if both are OFF (idle state) we leave states as "unknown" —
+            # we must observe ON→OFF before counting as complete.
 
             # ── Turn the aux switch ON ──────────────────────────────────────
             _LOGGER.warning("[CRM] calling turn_on entity=%s", entity_id)
