@@ -242,9 +242,7 @@ class RecipeExecutor:
             # Execute each switch the required number of times, in sequence
             for entity_id, count in switch_runs:
                 for run_num in range(count):
-                    # Brief pause between repeated runs so the machine settles.
-                    if run_num > 0:
-                        await asyncio.sleep(1)
+                    run_start = self.hass.loop.time()
 
                     while True:
                         if self._abort_event.is_set():
@@ -275,6 +273,25 @@ class RecipeExecutor:
                             continue
                         else:
                             return False
+
+                    # Between repeated runs: wait long enough for the physical
+                    # operation to finish before sending the next trigger.
+                    #
+                    # Momentary switches (ON→OFF in < 1s): _run_switch_once
+                    # returns almost immediately, so we sleep ≈ timeout seconds
+                    # to let the machine complete the physical action (e.g. hot
+                    # water dispensing).
+                    #
+                    # State-based switches (ON for the full duration): elapsed ≈
+                    # timeout already, so inter_run_delay ≈ 1s (settle time only).
+                    if run_num < count - 1:
+                        run_elapsed = self.hass.loop.time() - run_start
+                        inter_run_delay = max(1.0, float(timeout) - run_elapsed)
+                        _LOGGER.debug(
+                            "Inter-run delay: %.1fs (timeout=%ds, elapsed=%.1fs) entity=%s run %d/%d",
+                            inter_run_delay, timeout, run_elapsed, entity_id, run_num + 1, count,
+                        )
+                        await asyncio.sleep(inter_run_delay)
 
         # ── Drink step ──────────────────────────────────────────────────────
         if not drink:

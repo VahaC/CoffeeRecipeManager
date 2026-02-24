@@ -4,6 +4,20 @@ All notable changes to Coffee Recipe Manager are documented here.
 
 ---
 
+## [0.3.9] — 2026-02-24
+
+### Fixed
+- **Auxiliary switch: second (and subsequent) repeat runs not executing** —
+  momentary switches (e.g. `hotwaterdispensing`) return ON→OFF in under a
+  second, so `_run_switch_once` returned immediately and the hard-coded 1-second
+  inter-run sleep expired while the machine was still physically dispensing,
+  causing the machine to ignore the next `turn_on` command.
+  Fixed by tracking actual elapsed time in `_run_switch_once` and sleeping for
+  `max(1, timeout − elapsed)` between runs, so the total cycle time equals the
+  step's `timeout` for both momentary and state-based switches.
+
+---
+
 ## [0.3.8] — 2026-02-24
 
 ### Bug Fixes

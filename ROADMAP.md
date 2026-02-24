@@ -111,6 +111,23 @@ if a step contains a drink not present in the configured `drink_options`.
 
 ---
 
+### ✅ v0.3.9 — Fix momentary-switch repeat count *(released 2026-02-24)*
+
+- **Root cause**: auxiliary switches like `hotwaterdispensing` are **momentary**
+  triggers — they go ON→OFF in under a second. `_run_switch_once` returned `"ok"`
+  almost immediately (as designed). The previous hard-coded 1-second inter-run
+  sleep meant the second `turn_on` arrived while the machine was still physically
+  dispensing (~30 s), so the machine ignored it and only one dispense happened.
+- **Fix**: track how long each `_run_switch_once` call actually took using
+  `hass.loop.time()`. Inter-run delay = `max(1, timeout − elapsed)` so the total
+  time per run always equals the step's `timeout`.
+  - Momentary switch (`elapsed ≈ 0`): sleeps ≈ `timeout` seconds → machine
+    finishes before next trigger. ✓
+  - State-based switch (`elapsed ≈ timeout`): sleeps ≈ 1 second (settle only),
+    no double-wait. ✓
+
+---
+
 ### ✅ v0.3.8 — Fix "Change Drink to None" having no effect *(released 2026-02-24)*
 
 - **Root cause**: `\u2014 None \u2014` drink option used `value=""` (empty string) which HA's
@@ -229,4 +246,5 @@ Registered automatically by the integration — no manual resource setup.
 | v0.3.5 | Use friendly names as field labels (not just descriptions) for auxiliary switch count fields |
 | v0.3.6 | Fix View Selected Recipe / get_recipe service to correctly render switch steps and switch_counts format |
 | v0.3.7 | Fix auxiliary switch repeat count: listener now registered before turn_on to prevent missed ON/OFF events |
+| v0.3.9 | Fix momentary-switch repeat: inter-run delay = `max(1, timeout − elapsed)` | ✅ Done |
 | v0.3.8 | Fix "Change Drink to None" having no effect: replace empty-string SelectSelector option with 'none' sentinel |
