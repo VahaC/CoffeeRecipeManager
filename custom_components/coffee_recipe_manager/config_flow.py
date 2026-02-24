@@ -470,12 +470,15 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
         elif prefill.get("switch"):
             existing_switch_counts[prefill["switch"]] = 1
 
-        # Build description placeholders listing each switch
-        placeholder_parts = [
-            f"Switch {i}: {entity_id}"
-            for i, entity_id in enumerate(aux_switches)
-        ]
-        sw_list = " | ".join(placeholder_parts) if placeholder_parts else "No auxiliary switches configured"
+        # Build per-switch friendly name placeholders for data_description
+        sw_name_placeholders: dict[str, str] = {}
+        for i, entity_id in enumerate(aux_switches):
+            state = self.hass.states.get(entity_id)
+            if state and state.name:
+                friendly = state.name
+            else:
+                friendly = entity_id.split(".")[-1].replace("_", " ").title()
+            sw_name_placeholders[f"sw_name_{i}"] = friendly
 
         # Build schema dynamically
         schema_dict: dict = {
@@ -521,7 +524,7 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
             description_placeholders={
                 "step_num": str(self._step_index + 1),
                 "recipe_name": self._recipe_name,
-                "sw_list": sw_list,
+                **sw_name_placeholders,
             },
         )
 

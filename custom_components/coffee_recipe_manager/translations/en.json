@@ -86,7 +86,7 @@
       },
       "recipe_step": {
         "title": "Step {step_num} — {recipe_name}",
-        "description": "Select a **Drink** (or leave as *— None —* to skip) and set how many times each auxiliary switch should run (0 = skip).\n\nConfigured switches: {sw_list}",
+        "description": "Select a **Drink** (or leave as *— None —* to skip) and set how many times each auxiliary switch should run (0 = skip).",
         "data": {
           "drink": "Drink",
           "double": "Double portion",
@@ -102,6 +102,18 @@
           "switch_count_9": "Switch 9 (×)",
           "timeout": "Timeout (seconds)",
           "add_another": "Add another step after this one"
+        },
+        "data_description": {
+          "switch_count_0": "{sw_name_0}",
+          "switch_count_1": "{sw_name_1}",
+          "switch_count_2": "{sw_name_2}",
+          "switch_count_3": "{sw_name_3}",
+          "switch_count_4": "{sw_name_4}",
+          "switch_count_5": "{sw_name_5}",
+          "switch_count_6": "{sw_name_6}",
+          "switch_count_7": "{sw_name_7}",
+          "switch_count_8": "{sw_name_8}",
+          "switch_count_9": "{sw_name_9}"
         }
       },
       "recipe_edit_select": {
