@@ -28,7 +28,7 @@ A Home Assistant custom integration for brewing custom multi-step coffee recipes
 
 The config flow will guide you through 3 steps:
 
-1. **Machine entities** — select your drink selector, start switch, and work state sensor
+1. **Machine entities** — select your drink selector and start switch (used to detect when brewing starts and finishes). The work state sensor field is still present for backward compatibility but is no longer used for completion tracking.
 2. **Fault sensors** — select all binary sensors that indicate machine errors
 3. **Notifications** — optional mobile push service + recipes file name
 
@@ -62,6 +62,8 @@ Three actions are available:
   double: false
   timeout: 300
 ```
+
+  You can also use direct **switch steps** (see [Recipes via YAML](#recipes-via-yaml) below).
 
 4. Click **Submit** — the recipe is saved immediately
 
@@ -99,6 +101,37 @@ recipes:
         double: false
         timeout: 300
 ```
+
+### Step types
+
+#### Drink step
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `drink` | ✅ | — | Drink name from the machine's select entity |
+| `double` | ❌ | `false` | Activate the double-portion switch |
+| `timeout` | ❌ | `300` | Max seconds to wait for the machine to finish |
+
+#### Direct switch step
+Activates a specific switch entity directly, without going through the drink select flow. Useful for auxiliary machine functions such as milk frothing, hot water dispensing, or raw espresso shot.
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `switch` | ✅ | — | Full entity ID of the switch to activate |
+| `timeout` | ❌ | `300` | Max seconds to wait for the switch to turn OFF |
+
+Example — froth milk, then pull a manual espresso shot:
+```yaml
+steps:
+  - switch: switch.coffee_machine_milkfrothing
+    timeout: 60
+  - switch: switch.coffee_machine_espressoshot
+    timeout: 120
+```
+
+Other commonly supported switches:
+- `switch.coffee_machine_milkfrothing`
+- `switch.coffee_machine_hotwaterdispensing`
+- `switch.coffee_machine_espressoshot`
 
 ### Available drink options (Miele example)
 `Espresso`, `Americano`, `CafeLatte`, `LatteMacchiato`, `Ristretto`, `Doppio`, `EspressoMacchiato`, `RistrettoBianco`, `FlatWhite`, `Cortado`, `IcedAmericano`, `IcedLatte`, `Hotwater`, `HotMilk`, `TravelMug`, `Cappuccino`
@@ -232,3 +265,5 @@ Once the fault is resolved (sensor turns `off`):
 - Only one recipe can run at a time. Starting a new one aborts the current.
 - The integration checks for faults **before** each step and **during** brewing.
 - `timeout` per step defaults to 300s (5 min). Adjust for slow machines.
+- Brew completion is tracked by monitoring the **start switch** entity (ON → OFF cycle), not the work state sensor. This is polling-independent and works uniformly for both drink and switch steps.
+- **Switch steps** (direct switch activation) use the same completion logic as drink steps: the executor turns the switch ON and waits for it to turn OFF, with full fault monitoring and retry-on-fault-clear.

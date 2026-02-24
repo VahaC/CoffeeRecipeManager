@@ -9,10 +9,22 @@
 # EspressoMacchiato, RistrettoBianco, FlatWhite, Cortado, IcedAmericano,
 # IcedLatte, Hotwater, HotMilk, TravelMug, Cappuccino
 #
-# Step options:
-#   drink: <drink name>        (required)
-#   double: true/false         (optional, default: false)
-#   timeout: <seconds>         (optional, default: 300)
+# Step options (drink step):
+#   drink: <drink name>         (required for drink steps)
+#   double: true/false          (optional, default: false)
+#   timeout: <seconds>          (optional, default: 300)
+#
+# Step options (direct switch step):
+#   switch: <switch entity_id>  (use instead of 'drink' to activate a switch directly)
+#   timeout: <seconds>          (optional, default: 300)
+#
+# Direct switch examples:
+#   - switch: switch.coffee_machine_milkfrothing
+#     timeout: 60
+#   - switch: switch.coffee_machine_hotwaterdispensing
+#     timeout: 60
+#   - switch: switch.coffee_machine_espressoshot
+#     timeout: 120
 
 recipes:
 

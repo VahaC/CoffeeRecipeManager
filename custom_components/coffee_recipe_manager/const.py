@@ -1,7 +1,7 @@
 """Constants for Coffee Recipe Manager."""
 
 DOMAIN = "coffee_recipe_manager"
-VERSION = "0.2.4"
+VERSION = "0.3.0"
 
 # Config keys
 CONF_MACHINE_DRINK_SELECT = "machine_drink_select"

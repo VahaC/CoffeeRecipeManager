@@ -1,44 +1,42 @@
 # 🗺️ Coffee Recipe Manager — Roadmap
 
-## 🟢 v0.2.x — Quick Wins
+## ✅ v0.2.x — Quick Wins *(completed)*
 
-### 1. Richer recipe status sensor
-Add useful attributes to `sensor.coffee_recipe_status`:
+### 1. Richer recipe status sensor ✅
+Added useful attributes to `sensor.coffee_recipe_status`:
 - `current_step_drink` — drink being prepared right now
 - `current_step_number` / `total_steps` — step progress (e.g. `2 / 3`)
 - `last_completed_recipe` — name of last successfully brewed recipe
 - `last_completed_at` — timestamp of last completion
 
-Enables dashboard cards like:
-```
-☕ Running: LatteMacchiato  (step 1 of 3)
-```
+### 2. `last_completed` persistent storage ✅
+Last completed recipe name + timestamp stored in `hass.storage`
+(survives HA restarts).
+
+### 3. Drink validation on recipe save ✅
+When saving a recipe via UI flow or service, an error is shown
+if a step contains a drink not present in the configured `drink_options`.
 
 ---
 
-### 2. `last_completed` persistent storage
-Store the last completed recipe name + timestamp in `hass.storage`  
-(survives HA restarts). Useful for automations:
-```yaml
-condition:
-  - condition: template
-    value_template: >
-      {{ (now() - state_attr('sensor.coffee_recipe_status', 'last_completed_at'))
-         .total_seconds() > 1800 }}
-```
+## 🟡 v0.3.x — Recipe Capabilities
+
+### ✅ v0.3.0 — Direct switch steps & reliable completion tracking *(released 2026-02-24)*
+
+- **Direct switch steps** — Recipe steps can now activate a switch entity
+  directly (e.g. `switch.coffee_machine_milkfrothing`,
+  `switch.coffee_machine_hotwaterdispensing`,
+  `switch.coffee_machine_espressoshot`) without going through the drink
+  select flow.
+
+- **Start switch completion tracking** — `_wait_for_completion` now monitors
+  the `machine_start_switch` entity (ON → OFF cycle) instead of the
+  `machine_work_state` sensor. More reliable, polling-independent, and works
+  uniformly for both drink and switch steps.
 
 ---
 
-### 3. Drink validation on recipe save
-When saving a recipe (via UI flow or service), warn if a step contains  
-a drink not present in the configured `drink_options` for this machine.  
-Show an error in the flow instead of silently saving an invalid recipe.
-
----
-
-## 🟡 v0.3.x — Mid-complexity Features
-
-### 4. Fault wait timeout (max_fault_wait)
+### 4. Fault wait timeout (`max_fault_wait`)
 Currently the integration waits forever when a fault occurs.  
 Add configurable `max_fault_wait` (minutes, default: 30).  
 If the fault is not resolved within the timeout → abort recipe + send notification.
@@ -134,3 +132,7 @@ Registered automatically by the integration — no manual resource setup.
 | v0.1.1 | "View Selected Recipe" button on device page |
 | v0.2.0 | Richer status sensor (step drink, last_completed_at, brew_count), persistent brew stats, drink validation |
 | v0.2.1 | Integration icon added to HACS (`hacs.json`), icon submitted to home-assistant/brands |
+| v0.2.2 | Restore `icon.png` and `icon@2x.png` |
+| v0.2.3 | Fix premature recipe completion and skipped steps (two-stage completion wait) |
+| v0.2.4 | Fix drink name case mismatch, fix `machine_double_switch` not truly optional, add detailed debug logging |
+| v0.3.0 | Direct switch steps in recipes (`switch:` field), completion tracking via start switch instead of work state sensor |

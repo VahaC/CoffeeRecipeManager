@@ -37,15 +37,17 @@ add_recipe:
         text:
     steps:
       name: Steps
-      description: List of steps. Each step has drink, double (optional), timeout (optional)
+      description: |
+        List of steps. Two step types are supported:
+        - Drink step: drink (required), double (optional, default false), timeout (optional, default 300)
+        - Switch step: switch (required, full entity_id), timeout (optional, default 300)
       required: true
       example:
         - drink: LatteMacchiato
           double: false
           timeout: 300
-        - drink: Americano
-          double: false
-          timeout: 300
+        - switch: switch.coffee_machine_milkfrothing
+          timeout: 60
       selector:
         object:
 

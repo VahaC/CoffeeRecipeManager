@@ -4,6 +4,60 @@ All notable changes to Coffee Recipe Manager are documented here.
 
 ---
 
+## [0.3.0] — 2026-02-24
+
+### New Features
+
+- **Direct switch steps in recipes** — Recipe steps can now activate a specific
+  switch entity directly, without going through the drink select flow. This
+  enables full control over auxiliary machine functions:
+
+  ```yaml
+  steps:
+    - switch: switch.coffee_machine_milkfrothing
+      timeout: 60
+    - drink: Espresso
+      double: true
+      timeout: 180
+    - switch: switch.coffee_machine_espressoshot
+      timeout: 120
+  ```
+
+  Supported fields for a switch step:
+  | Field | Required | Default | Description |
+  |-------|----------|---------|-------------|
+  | `switch` | ✅ | — | Full entity ID of the switch to activate |
+  | `timeout` | ❌ | 300 s | Max time to wait for the switch to turn OFF |
+
+  The executor turns the switch ON and waits for it to turn OFF using the same
+  two-stage completion logic as drink steps, including fault monitoring and
+  retry-on-fault-clear. If the entity is not found, the recipe fails
+  immediately with a descriptive notification.
+
+### Improvements
+
+- **Brew completion now tracked via start switch** — `_wait_for_completion`
+  previously monitored the `machine_work_state` sensor (standby ↔ non-standby
+  transitions). It now tracks the `machine_start_switch` entity (OFF → ON →
+  OFF cycle) instead.
+
+  This is more reliable because:
+  - The start switch is a first-class HA entity that changes state atomically.
+  - It does not depend on polling intervals of a sensor.
+  - Works uniformly for both drink steps and the new direct switch steps.
+
+  Stage 1 waits for the tracked switch to turn **ON** (brew confirmed started).
+  Stage 2 waits for it to turn **OFF** (brew finished). Fast-dispensing drinks
+  that complete before HA polls the ON state are still handled correctly — if
+  only the ON→OFF transition is observed, the step is immediately marked done.
+
+- **Context-aware timeout error messages** — When Stage 1 times out, the error
+  message now distinguishes between the main start switch (hints at a possible
+  drink name mismatch) and a recipe-level switch entity (hints at a wrong
+  entity ID).
+
+---
+
 ## [0.2.4] — 2026-02-19
 
 ### Bug Fixes

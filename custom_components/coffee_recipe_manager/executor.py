@@ -13,7 +13,6 @@ from homeassistant.helpers.storage import Store
 from .const import (
     BREW_STATS_STORE_KEY,
     BREW_STATS_STORE_VERSION,
-    DEFAULT_STANDBY_STATE,
     DEFAULT_START_TIMEOUT,
     DEFAULT_STEP_TIMEOUT,
     EXECUTOR_COMPLETED,
@@ -204,12 +203,58 @@ class RecipeExecutor:
 
     async def _execute_step(self, step: dict) -> bool:
         """Execute one step with automatic fault-wait-resume. Returns True if ok."""
+        switch_entity = step.get("switch")
         drink = step.get("drink")
         double = step.get("double", False)
         timeout = step.get("timeout", DEFAULT_STEP_TIMEOUT)
 
+        # ── Switch-only step ────────────────────────────────────────────────
+        # A step can target a specific switch directly (e.g. milkfrothing,
+        # hotwaterdispensing, espressoshot) instead of the normal drink flow.
+        if switch_entity:
+            if self.hass.states.get(switch_entity) is None:
+                await self._fail(
+                    f"Switch entity '{switch_entity}' not found. "
+                    f"Check the entity ID in the recipe."
+                )
+                return False
+
+            while True:
+                if self._abort_event.is_set():
+                    self._set_status(EXECUTOR_IDLE)
+                    return False
+
+                fault = self._get_active_fault()
+                if fault:
+                    cleared = await self._wait_for_fault_clear(fault)
+                    if not cleared:
+                        return False
+                    continue
+
+                self._current_step_drink = switch_entity
+                self._set_status(EXECUTOR_RUNNING)
+                await self.hass.services.async_call(
+                    "switch", "turn_on",
+                    {"entity_id": switch_entity},
+                    blocking=True,
+                )
+
+                result = await self._wait_for_completion(timeout, start_entity=switch_entity)
+
+                if result == "ok":
+                    return True
+                elif result == "retry":
+                    _LOGGER.info(
+                        "Recipe '%s' step %d: fault cleared, restarting switch step",
+                        self._current_recipe, self._current_step,
+                    )
+                    continue
+                else:
+                    return False
+
+        # ── Drink step (default) ────────────────────────────────────────────
         if not drink:
-            _LOGGER.warning("Step has no 'drink' field, skipping: %s", step)
+            _LOGGER.warning("Step has no 'drink' or 'switch' field, skipping: %s", step)
             return True
 
         # Resolve drink name case-insensitively against the actual select entity options.
@@ -286,32 +331,28 @@ class RecipeExecutor:
             else:  # "abort" or "timeout"
                 return False
 
-    async def _wait_for_completion(self, timeout: int) -> str:
+    async def _wait_for_completion(self, timeout: int, start_entity: str | None = None) -> str:
         """
-        Wait until machine finishes brewing and returns to standby.
+        Wait until machine finishes brewing.
 
-        Two-stage approach to avoid false "ok" when the machine is still in
-        standby for a brief moment right after the start command is issued:
+        Tracks the given switch entity (defaults to machine_start_switch):
 
-          Stage 1 – wait for machine to LEAVE standby (confirm brew started).
-                    Uses DEFAULT_START_TIMEOUT. If machine never leaves standby
-                    within that window, treat the step as instantly done (the
-                    machine may have already finished before the listener was
-                    registered, or the start was a no-op).
+          Stage 1 – wait for the switch to turn ON (confirm brew started).
+                    Uses DEFAULT_START_TIMEOUT.
 
-          Stage 2 – wait for machine to RETURN to standby (brew finished).
+          Stage 2 – wait for the switch to turn OFF (brew finished).
                     Uses the per-step timeout.
 
-        Monitors: work_state changes, fault sensors, abort event.
+        Monitors: switch changes, fault sensors, abort event.
         Returns: "ok" | "abort" | "timeout" | "retry" (fault cleared, retry step).
         """
-        work_state_entity = self.config["machine_work_state"]
-        standby_value = self.config.get("standby_state", DEFAULT_STANDBY_STATE)
+        if start_entity is None:
+            start_entity = self.config["machine_start_switch"]
         fault_sensors = self.config.get("fault_sensors", [])
 
-        # stage1: machine left standby (started working)
+        # stage1: start switch confirmed ON (brew started)
         start_event = asyncio.Event()
-        # stage2: machine returned to standby after working
+        # stage2: start switch turned OFF (brew finished)
         done_event = asyncio.Event()
         fault_detected: list[str] = []
         machine_started = False
@@ -328,25 +369,25 @@ class RecipeExecutor:
             old_val = old_state.state if old_state else "?"
             new_val = new_state.state
 
-            if entity_id == work_state_entity:
+            if entity_id == start_entity:
                 _LOGGER.debug(
-                    "work_state changed: %s → %s  (recipe='%s' step=%d machine_started=%s)",
+                    "start_switch changed: %s → %s  (recipe='%s' step=%d machine_started=%s)",
                     old_val, new_val,
                     self._current_recipe, self._current_step, machine_started,
                 )
-                if new_val != standby_value:
-                    # Machine left standby — brew started
+                if new_val == "on":
+                    # Start switch turned ON — brew started
                     machine_started = True
                     start_event.set()
-                elif old_val != standby_value:
-                    # Machine returned to standby from a non-standby state.
-                    # Signal done regardless of machine_started — handles the case
-                    # where the HA sensor missed the standby→working transition
-                    # (e.g. fast-dispensing drinks like Hotwater that complete
-                    # before the next poll) but did catch the working→standby one.
-                    machine_started = True  # retroactively mark as started
+                elif new_val == "off":
+                    # Start switch turned OFF — brew finished.
+                    # Retroactively mark as started — handles the case where HA
+                    # missed the off→on transition (fast-dispensing drinks like
+                    # Hotwater) but did catch the on→off one.
+                    machine_started = True
+                    start_event.set()
                     _LOGGER.debug(
-                        "work_state → standby after working: signalling done  (recipe='%s' step=%d)",
+                        "start_switch → off: signalling done  (recipe='%s' step=%d)",
                         self._current_recipe, self._current_step,
                     )
                     done_event.set()
@@ -358,7 +399,7 @@ class RecipeExecutor:
                     start_event.set()
                     done_event.set()
 
-        entities_to_watch = [work_state_entity] + list(fault_sensors)
+        entities_to_watch = [start_entity] + list(fault_sensors)
         unsub = async_track_state_change_event(
             self.hass, entities_to_watch, _state_listener
         )
@@ -370,32 +411,32 @@ class RecipeExecutor:
                 cleared = await self._wait_for_fault_clear(fault)
                 return "retry" if cleared else "abort"
 
-            # Check if machine has already left standby before listener was registered
-            current = self.hass.states.get(work_state_entity)
+            # Check if start switch is already ON before listener was registered
+            current = self.hass.states.get(start_entity)
             current_val = current.state if current else "unavailable"
             _LOGGER.debug(
-                "wait_for_completion: current work_state='%s' standby='%s'  (recipe='%s' step=%d)",
-                current_val, standby_value, self._current_recipe, self._current_step,
+                "wait_for_completion: current start_switch='%s'  (recipe='%s' step=%d)",
+                current_val, self._current_recipe, self._current_step,
             )
-            if current and current.state != standby_value:
+            if current and current.state == "on":
                 machine_started = True
                 start_event.set()
                 _LOGGER.debug(
-                    "Machine already working before listener registered  (recipe='%s' step=%d)",
+                    "Start switch already ON before listener registered  (recipe='%s' step=%d)",
                     self._current_recipe, self._current_step,
                 )
 
-            # ── Stage 1: wait for machine to START (or fast-complete) ───────
+            # ── Stage 1: wait for start switch to turn ON ───────────────────
             if not machine_started:
                 _LOGGER.debug(
-                    "Stage 1: waiting for machine to leave standby  (recipe='%s' step=%d timeout=%ds)",
+                    "Stage 1: waiting for start switch to turn ON  (recipe='%s' step=%d timeout=%ds)",
                     self._current_recipe, self._current_step, DEFAULT_START_TIMEOUT,
                 )
                 abort_task = self.hass.async_create_task(self._abort_event.wait())
                 start_task = self.hass.async_create_task(start_event.wait())
-                # Also watch done_event: fast-dispensing drinks (e.g. Hotwater)
-                # may complete before HA polls the non-standby state, so the
-                # sensor only fires once — for the working→standby transition.
+                # Also watch done_event: fast-dispensing drinks may complete
+                # before HA polls the ON state, so the switch fires only once —
+                # for the on→off transition.
                 done_task_s1 = self.hass.async_create_task(done_event.wait())
 
                 done_s1, pending_s1 = await asyncio.wait(
@@ -411,22 +452,29 @@ class RecipeExecutor:
                     return "abort"
 
                 if not done_s1:
-                    # Neither start nor done fired within the timeout.
-                    # Most likely cause: invalid drink name that the machine
-                    # silently ignored (select option mismatch).
-                    drink_entity = self.config["machine_drink_select"]
-                    drink_state = self.hass.states.get(drink_entity)
-                    current_option = drink_state.state if drink_state else "unknown"
-                    await self._fail(
-                        f"Machine did not start within {DEFAULT_START_TIMEOUT}s for step "
-                        f"{self._current_step} (drink='{self._current_step_drink}'). "
-                        f"Current select option is '{current_option}'. "
-                        f"Check that the drink name in the recipe exactly matches the machine's option."
-                    )
+                    # Start switch never turned ON within the timeout.
+                    if start_entity == self.config.get("machine_start_switch"):
+                        # Most likely cause: invalid drink name that the machine
+                        # silently ignored (select option mismatch).
+                        drink_entity = self.config["machine_drink_select"]
+                        drink_state = self.hass.states.get(drink_entity)
+                        current_option = drink_state.state if drink_state else "unknown"
+                        await self._fail(
+                            f"Machine did not start within {DEFAULT_START_TIMEOUT}s for step "
+                            f"{self._current_step} (drink='{self._current_step_drink}'). "
+                            f"Current select option is '{current_option}'. "
+                            f"Check that the drink name in the recipe exactly matches the machine's option."
+                        )
+                    else:
+                        await self._fail(
+                            f"Switch '{start_entity}' did not turn ON within {DEFAULT_START_TIMEOUT}s "
+                            f"for step {self._current_step}. "
+                            f"Check that the entity ID is correct and the machine is responsive."
+                        )
                     return "timeout"
 
-                # If the done_event fired already (fast-dispense completed during
-                # Stage 1), we can skip Stage 2 entirely.
+                # If done_event fired in Stage 1 (switch already back OFF),
+                # the brew completed during Stage 1 — skip Stage 2.
                 if done_event.is_set() and not fault_detected:
                     _LOGGER.debug(
                         "Stage 1: drink completed before Stage 2 (fast-dispense)  (recipe='%s' step=%d)",
@@ -435,7 +483,7 @@ class RecipeExecutor:
                     return "ok"
 
                 _LOGGER.debug(
-                    "Stage 1 done: machine left standby  (recipe='%s' step=%d)",
+                    "Stage 1 done: start switch turned ON  (recipe='%s' step=%d)",
                     self._current_recipe, self._current_step,
                 )
 
@@ -444,9 +492,9 @@ class RecipeExecutor:
                     cleared = await self._wait_for_fault_clear(fault_msg)
                     return "retry" if cleared else "abort"
 
-            # ── Stage 2: wait for machine to FINISH ─────────────────────────
+            # ── Stage 2: wait for start switch to turn OFF ──────────────────
             _LOGGER.debug(
-                "Stage 2: waiting for machine to return to standby  (recipe='%s' step=%d timeout=%ds)",
+                "Stage 2: waiting for start switch to turn OFF  (recipe='%s' step=%d timeout=%ds)",
                 self._current_recipe, self._current_step, timeout,
             )
             abort_task = self.hass.async_create_task(self._abort_event.wait())
@@ -474,7 +522,7 @@ class RecipeExecutor:
                 return "retry" if cleared else "abort"
 
             _LOGGER.debug(
-                "Stage 2 done: machine returned to standby  (recipe='%s' step=%d)",
+                "Stage 2 done: start switch turned OFF  (recipe='%s' step=%d)",
                 self._current_recipe, self._current_step,
             )
             return "ok"
