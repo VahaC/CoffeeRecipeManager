@@ -393,59 +393,46 @@ class RecipeExecutor:
 
     async def _run_switch_once(self, entity_id: str, timeout: int) -> str:
         """
-        Turn on an auxiliary switch and wait for it to complete (turn OFF).
+        Turn on an auxiliary switch and wait for the machine to complete.
 
-        The state listener is registered BEFORE calling turn_on to avoid missing
-        fast ON→OFF cycles where the machine acknowledges and completes the command
-        before a listener registered after turn_on would see any events.
+        Completion is signalled by EITHER:
+          • the aux switch itself going OFF  (momentary / self-resetting switch), OR
+          • machine_start_switch going OFF   (machine reports it finished the operation)
+        whichever happens first.
+
+        Stage 1 – send turn_on, then wait minimum 5s.
+                  If either completion signal fires within 5s → fast complete.
+        Stage 2 – wait up to `timeout` seconds for either completion signal.
 
         Returns: "ok" | "abort" | "timeout" | "retry"
         """
+        machine_start_entity = self.config["machine_start_switch"]
         fault_sensors = self.config.get("fault_sensors", [])
 
-        started_event = asyncio.Event()   # switch turned ON
-        done_event = asyncio.Event()      # switch turned OFF after being ON
+        done_event = asyncio.Event()   # aux switch OFF or machine_start OFF
         fault_detected: list[str] = []
-        machine_started = False
 
         @callback
         def _state_listener(event):
-            nonlocal machine_started
             entity = event.data.get("entity_id", "")
             new_state = event.data.get("new_state")
             if new_state is None:
                 return
             val = new_state.state
-
-            if entity == entity_id:
-                _LOGGER.debug(
-                    "_run_switch_once: %s → %s  (recipe='%s' step=%d)",
-                    event.data.get("old_state", {}).state if event.data.get("old_state") else "?",
-                    val, self._current_recipe, self._current_step,
-                )
-                _LOGGER.warning(
-                    "[CRM] state_listener: entity=%s old=%s new=%s machine_started=%s",
-                    entity,
-                    event.data.get("old_state").state if event.data.get("old_state") else "?",
-                    val, machine_started,
-                )
-                if val == "on":
-                    machine_started = True
-                    started_event.set()
-                elif val == "off":
-                    # Retroactively mark started if we missed the ON event
-                    machine_started = True
-                    started_event.set()
-                    done_event.set()
+            _LOGGER.warning(
+                "[CRM] state_listener: entity=%s old=%s new=%s",
+                entity,
+                event.data.get("old_state").state if event.data.get("old_state") else "?",
+                val,
+            )
+            if entity in (entity_id, machine_start_entity) and val == "off":
+                done_event.set()
             elif entity in fault_sensors and val == "on":
                 fault_detected.append(f"{entity} = on")
-                started_event.set()
                 done_event.set()
 
-        entities_to_watch = [entity_id] + list(fault_sensors)
-        unsub = async_track_state_change_event(
-            self.hass, entities_to_watch, _state_listener
-        )
+        entities_to_watch = [entity_id, machine_start_entity] + list(fault_sensors)
+        unsub = async_track_state_change_event(self.hass, entities_to_watch, _state_listener)
 
         try:
             # Check faults before starting
@@ -454,117 +441,89 @@ class RecipeExecutor:
                 cleared = await self._wait_for_fault_clear(fault)
                 return "retry" if cleared else "abort"
 
-            # Pre-check: if already ON when listener was registered
-            current = self.hass.states.get(entity_id)
+            ms = self.hass.states.get(machine_start_entity)
+            aux = self.hass.states.get(entity_id)
             _LOGGER.warning(
-                "[CRM] _run_switch_once PRE-CHECK entity=%s state=%s",
-                entity_id, current.state if current else "unavailable",
+                "[CRM] _run_switch_once PRE-CHECK entity=%s state=%s machine_start=%s",
+                entity_id,
+                aux.state if aux else "unavailable",
+                ms.state if ms else "unavailable",
             )
-            if current and current.state == "on":
-                machine_started = True
-                started_event.set()
 
-            # ── Turn the switch ON (listener is already watching) ───────────
+            # ── Turn the aux switch ON ──────────────────────────────────────
             _LOGGER.warning("[CRM] calling turn_on entity=%s", entity_id)
             await self.hass.services.async_call(
                 "switch", "turn_on",
                 {"entity_id": entity_id},
                 blocking=True,
             )
-
-            # After blocking turn_on the state should be updated; if still OFF,
-            # the listener will catch the incoming ON event.
-            current_after = self.hass.states.get(entity_id)
+            ms_after = self.hass.states.get(machine_start_entity)
+            aux_after = self.hass.states.get(entity_id)
             _LOGGER.warning(
-                "[CRM] after turn_on entity=%s state=%s machine_started=%s",
-                entity_id, current_after.state if current_after else "unavailable", machine_started,
-            )
-            if not machine_started:
-                if current_after and current_after.state == "on":
-                    machine_started = True
-                    started_event.set()
-
-            # ── Stage 1: wait for switch ON ─────────────────────────────────
-            if not machine_started:
-                _LOGGER.warning(
-                    "[CRM] Stage 1: waiting up to %ds for switch ON entity=%s",
-                    DEFAULT_START_TIMEOUT, entity_id,
-                )
-                abort_task = self.hass.async_create_task(self._abort_event.wait())
-                start_task = self.hass.async_create_task(started_event.wait())
-                done_task = self.hass.async_create_task(done_event.wait())
-
-                done_s1, pending = await asyncio.wait(
-                    [abort_task, start_task, done_task],
-                    timeout=DEFAULT_START_TIMEOUT,
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-                for t in pending:
-                    t.cancel()
-
-                _LOGGER.warning(
-                    "[CRM] Stage 1 finished: abort=%s done_s1_count=%d machine_started=%s done_event=%s fault=%s",
-                    self._abort_event.is_set(), len(done_s1), machine_started, done_event.is_set(), fault_detected,
-                )
-
-                if self._abort_event.is_set():
-                    self._set_status(EXECUTOR_IDLE)
-                    return "abort"
-
-                if not done_s1:
-                    await self._fail(
-                        f"Switch '{entity_id}' did not turn ON within {DEFAULT_START_TIMEOUT}s "
-                        f"for step {self._current_step}. "
-                        f"Check that the entity ID is correct and the machine is responsive."
-                    )
-                    return "timeout"
-
-                if fault_detected:
-                    cleared = await self._wait_for_fault_clear(", ".join(fault_detected))
-                    return "retry" if cleared else "abort"
-
-                # Fast complete: switch went ON then OFF within Stage 1
-                if done_event.is_set():
-                    _LOGGER.warning(
-                        "[CRM] fast complete in Stage 1 entity=%s",
-                        entity_id,
-                    )
-                    return "ok"
-            else:
-                _LOGGER.warning(
-                    "[CRM] skipping Stage 1 (machine_started=True already) entity=%s",
-                    entity_id,
-                )
-
-            # ── Stage 2: wait for switch OFF ─────────────────────────────────
-            # Stage 2 uses timeout + a fixed buffer so that a machine that takes
-            # exactly `timeout` seconds to finish does not race against asyncio.wait.
-            # The user-visible timeout still governs expectations; the buffer is silent.
-            _SWITCH_STAGE2_BUFFER = 10
-            stage2_timeout = timeout + _SWITCH_STAGE2_BUFFER
-            _LOGGER.warning(
-                "[CRM] Stage 2: waiting up to %ds (%ds + %ds buffer) for switch OFF entity=%s done_event_already=%s",
-                stage2_timeout, timeout, _SWITCH_STAGE2_BUFFER, entity_id, done_event.is_set(),
+                "[CRM] after turn_on entity=%s state=%s machine_start=%s",
+                entity_id,
+                aux_after.state if aux_after else "unavailable",
+                ms_after.state if ms_after else "unavailable",
             )
 
-            # If the switch already went OFF during Stage 1 processing above
-            if done_event.is_set() and not fault_detected:
-                _LOGGER.warning("[CRM] Stage 2: early return (done during Stage 1) entity=%s", entity_id)
-                return "ok"
-
+            # ── Stage 1: wait minimum 5s (or either completion signal) ─────
+            _LOGGER.warning(
+                "[CRM] Stage 1: waiting 5s min (or aux/machine_start OFF) entity=%s",
+                entity_id,
+            )
             abort_task = self.hass.async_create_task(self._abort_event.wait())
             done_task = self.hass.async_create_task(done_event.wait())
 
-            done_s2, pending = await asyncio.wait(
+            done_s1, pending = await asyncio.wait(
                 [abort_task, done_task],
-                timeout=stage2_timeout,
+                timeout=5,
                 return_when=asyncio.FIRST_COMPLETED,
             )
             for t in pending:
                 t.cancel()
 
+            _LOGGER.warning(
+                "[CRM] Stage 1 finished: abort=%s done_event=%s fault=%s",
+                self._abort_event.is_set(), done_event.is_set(), fault_detected,
+            )
+
+            if self._abort_event.is_set():
+                self._set_status(EXECUTOR_IDLE)
+                return "abort"
+
+            if fault_detected:
+                cleared = await self._wait_for_fault_clear(", ".join(fault_detected))
+                return "retry" if cleared else "abort"
+
+            if done_event.is_set():
+                _LOGGER.warning("[CRM] fast complete in Stage 1 entity=%s", entity_id)
+                return "ok"
+
+            # ── Stage 2: wait for either completion signal ─────────────────
+            _LOGGER.warning(
+                "[CRM] Stage 2: waiting up to %ds for aux/machine_start OFF entity=%s",
+                timeout, entity_id,
+            )
+            abort_task = self.hass.async_create_task(self._abort_event.wait())
+            done_task = self.hass.async_create_task(done_event.wait())
+
+            done_s2, pending = await asyncio.wait(
+                [abort_task, done_task],
+                timeout=timeout,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for t in pending:
+                t.cancel()
+
+            _LOGGER.warning(
+                "[CRM] Stage 2 finished: abort=%s done_s2_count=%d done_event=%s fault=%s",
+                self._abort_event.is_set(), len(done_s2), done_event.is_set(), fault_detected,
+            )
+
             if not done_s2:
-                await self._fail(f"Timeout after {stage2_timeout}s waiting for switch '{entity_id}' to finish")
+                await self._fail(
+                    f"Timeout after {timeout}s waiting for machine to finish '{entity_id}'"
+                )
                 return "timeout"
 
             if self._abort_event.is_set():
@@ -575,10 +534,7 @@ class RecipeExecutor:
                 cleared = await self._wait_for_fault_clear(", ".join(fault_detected))
                 return "retry" if cleared else "abort"
 
-            _LOGGER.warning(
-                "[CRM] Stage 2: done OK entity=%s",
-                entity_id,
-            )
+            _LOGGER.warning("[CRM] Stage 2: done OK entity=%s", entity_id)
             return "ok"
 
         finally:
@@ -588,74 +544,42 @@ class RecipeExecutor:
         """
         Wait until machine finishes brewing.
 
-        Tracks the given switch entity (defaults to machine_start_switch):
+        Uses machine_start_switch as the completion signal:
+          Stage 1 – wait minimum 5s; if machine_start goes OFF sooner → fast complete.
+          Stage 2 – wait for machine_start to go OFF (brew finished). Uses per-step timeout.
 
-          Stage 1 – wait for the switch to turn ON (confirm brew started).
-                    Uses DEFAULT_START_TIMEOUT.
-
-          Stage 2 – wait for the switch to turn OFF (brew finished).
-                    Uses the per-step timeout.
-
-        Monitors: switch changes, fault sensors, abort event.
+        Monitors: machine_start_switch changes, fault sensors, abort event.
         Returns: "ok" | "abort" | "timeout" | "retry" (fault cleared, retry step).
         """
         if start_entity is None:
             start_entity = self.config["machine_start_switch"]
         fault_sensors = self.config.get("fault_sensors", [])
 
-        # stage1: start switch confirmed ON (brew started)
-        start_event = asyncio.Event()
-        # stage2: start switch turned OFF (brew finished)
-        done_event = asyncio.Event()
+        done_event = asyncio.Event()   # start switch turned OFF → brew finished
         fault_detected: list[str] = []
-        machine_started = False
 
         @callback
         def _state_listener(event):
-            nonlocal machine_started
             entity_id = event.data.get("entity_id", "")
             new_state = event.data.get("new_state")
             old_state = event.data.get("old_state")
             if new_state is None:
                 return
-
             old_val = old_state.state if old_state else "?"
             new_val = new_state.state
-
             if entity_id == start_entity:
                 _LOGGER.debug(
-                    "start_switch changed: %s → %s  (recipe='%s' step=%d machine_started=%s)",
-                    old_val, new_val,
-                    self._current_recipe, self._current_step, machine_started,
+                    "start_switch changed: %s → %s  (recipe='%s' step=%d)",
+                    old_val, new_val, self._current_recipe, self._current_step,
                 )
-                if new_val == "on":
-                    # Start switch turned ON — brew started
-                    machine_started = True
-                    start_event.set()
-                elif new_val == "off":
-                    # Start switch turned OFF — brew finished.
-                    # Retroactively mark as started — handles the case where HA
-                    # missed the off→on transition (fast-dispensing drinks like
-                    # Hotwater) but did catch the on→off one.
-                    machine_started = True
-                    start_event.set()
-                    _LOGGER.debug(
-                        "start_switch → off: signalling done  (recipe='%s' step=%d)",
-                        self._current_recipe, self._current_step,
-                    )
+                if new_val == "off":
                     done_event.set()
-
-            elif entity_id in fault_sensors:
-                if new_val == "on":
-                    fault_detected.append(f"{entity_id} = on")
-                    # Unblock both stages
-                    start_event.set()
-                    done_event.set()
+            elif entity_id in fault_sensors and new_val == "on":
+                fault_detected.append(f"{entity_id} = on")
+                done_event.set()
 
         entities_to_watch = [start_entity] + list(fault_sensors)
-        unsub = async_track_state_change_event(
-            self.hass, entities_to_watch, _state_listener
-        )
+        unsub = async_track_state_change_event(self.hass, entities_to_watch, _state_listener)
 
         try:
             # Check faults immediately before waiting
@@ -664,101 +588,51 @@ class RecipeExecutor:
                 cleared = await self._wait_for_fault_clear(fault)
                 return "retry" if cleared else "abort"
 
-            # Check if start switch is already ON before listener was registered
-            current = self.hass.states.get(start_entity)
-            current_val = current.state if current else "unavailable"
+            # ── Stage 1: wait minimum 5s (or machine_start OFF) ─────────────
             _LOGGER.debug(
-                "wait_for_completion: current start_switch='%s'  (recipe='%s' step=%d)",
-                current_val, self._current_recipe, self._current_step,
+                "Stage 1: waiting 5s min (or start switch OFF)  (recipe='%s' step=%d)",
+                self._current_recipe, self._current_step,
             )
-            if current and current.state == "on":
-                machine_started = True
-                start_event.set()
+            abort_task = self.hass.async_create_task(self._abort_event.wait())
+            done_task = self.hass.async_create_task(done_event.wait())
+
+            done_s1, pending = await asyncio.wait(
+                [abort_task, done_task],
+                timeout=5,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for t in pending:
+                t.cancel()
+
+            if self._abort_event.is_set():
+                self._set_status(EXECUTOR_IDLE)
+                return "abort"
+
+            if fault_detected:
+                cleared = await self._wait_for_fault_clear(", ".join(fault_detected))
+                return "retry" if cleared else "abort"
+
+            if done_event.is_set():
                 _LOGGER.debug(
-                    "Start switch already ON before listener registered  (recipe='%s' step=%d)",
+                    "Stage 1: start switch OFF (fast-dispense)  (recipe='%s' step=%d)",
                     self._current_recipe, self._current_step,
                 )
+                return "ok"
 
-            # ── Stage 1: wait for start switch to turn ON ───────────────────
-            if not machine_started:
-                _LOGGER.debug(
-                    "Stage 1: waiting for start switch to turn ON  (recipe='%s' step=%d timeout=%ds)",
-                    self._current_recipe, self._current_step, DEFAULT_START_TIMEOUT,
-                )
-                abort_task = self.hass.async_create_task(self._abort_event.wait())
-                start_task = self.hass.async_create_task(start_event.wait())
-                # Also watch done_event: fast-dispensing drinks may complete
-                # before HA polls the ON state, so the switch fires only once —
-                # for the on→off transition.
-                done_task_s1 = self.hass.async_create_task(done_event.wait())
-
-                done_s1, pending_s1 = await asyncio.wait(
-                    [abort_task, start_task, done_task_s1],
-                    timeout=DEFAULT_START_TIMEOUT,
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-                for t in pending_s1:
-                    t.cancel()
-
-                if self._abort_event.is_set():
-                    self._set_status(EXECUTOR_IDLE)
-                    return "abort"
-
-                if not done_s1:
-                    # Start switch never turned ON within the timeout.
-                    if start_entity == self.config.get("machine_start_switch"):
-                        # Most likely cause: invalid drink name that the machine
-                        # silently ignored (select option mismatch).
-                        drink_entity = self.config["machine_drink_select"]
-                        drink_state = self.hass.states.get(drink_entity)
-                        current_option = drink_state.state if drink_state else "unknown"
-                        await self._fail(
-                            f"Machine did not start within {DEFAULT_START_TIMEOUT}s for step "
-                            f"{self._current_step} (drink='{self._current_step_drink}'). "
-                            f"Current select option is '{current_option}'. "
-                            f"Check that the drink name in the recipe exactly matches the machine's option."
-                        )
-                    else:
-                        await self._fail(
-                            f"Switch '{start_entity}' did not turn ON within {DEFAULT_START_TIMEOUT}s "
-                            f"for step {self._current_step}. "
-                            f"Check that the entity ID is correct and the machine is responsive."
-                        )
-                    return "timeout"
-
-                # If done_event fired in Stage 1 (switch already back OFF),
-                # the brew completed during Stage 1 — skip Stage 2.
-                if done_event.is_set() and not fault_detected:
-                    _LOGGER.debug(
-                        "Stage 1: drink completed before Stage 2 (fast-dispense)  (recipe='%s' step=%d)",
-                        self._current_recipe, self._current_step,
-                    )
-                    return "ok"
-
-                _LOGGER.debug(
-                    "Stage 1 done: start switch turned ON  (recipe='%s' step=%d)",
-                    self._current_recipe, self._current_step,
-                )
-
-                if fault_detected:
-                    fault_msg = ", ".join(fault_detected)
-                    cleared = await self._wait_for_fault_clear(fault_msg)
-                    return "retry" if cleared else "abort"
-
-            # ── Stage 2: wait for start switch to turn OFF ──────────────────
+            # ── Stage 2: wait for start switch to turn OFF ───────────────────
             _LOGGER.debug(
-                "Stage 2: waiting for start switch to turn OFF  (recipe='%s' step=%d timeout=%ds)",
+                "Stage 2: waiting for start switch OFF  (recipe='%s' step=%d timeout=%ds)",
                 self._current_recipe, self._current_step, timeout,
             )
             abort_task = self.hass.async_create_task(self._abort_event.wait())
             done_task = self.hass.async_create_task(done_event.wait())
 
-            done_s2, pending_s2 = await asyncio.wait(
+            done_s2, pending = await asyncio.wait(
                 [abort_task, done_task],
                 timeout=timeout,
                 return_when=asyncio.FIRST_COMPLETED,
             )
-            for t in pending_s2:
+            for t in pending:
                 t.cancel()
 
             if not done_s2:
@@ -770,12 +644,11 @@ class RecipeExecutor:
                 return "abort"
 
             if fault_detected:
-                fault_msg = ", ".join(fault_detected)
-                cleared = await self._wait_for_fault_clear(fault_msg)
+                cleared = await self._wait_for_fault_clear(", ".join(fault_detected))
                 return "retry" if cleared else "abort"
 
             _LOGGER.debug(
-                "Stage 2 done: start switch turned OFF  (recipe='%s' step=%d)",
+                "Stage 2 done: start switch OFF  (recipe='%s' step=%d)",
                 self._current_recipe, self._current_step,
             )
             return "ok"
