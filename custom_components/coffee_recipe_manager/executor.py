@@ -409,26 +409,35 @@ class RecipeExecutor:
         machine_start_entity = self.config["machine_start_switch"]
         fault_sensors = self.config.get("fault_sensors", [])
 
-        done_event = asyncio.Event()   # aux switch OFF or machine_start OFF
+        done_event = asyncio.Event()   # BOTH aux switch OFF AND machine_start OFF
         fault_detected: list[str] = []
+        aux_off = False
+        machine_start_off = False
 
         @callback
         def _state_listener(event):
+            nonlocal aux_off, machine_start_off
             entity = event.data.get("entity_id", "")
             new_state = event.data.get("new_state")
             if new_state is None:
                 return
             val = new_state.state
             _LOGGER.warning(
-                "[CRM] state_listener: entity=%s old=%s new=%s",
+                "[CRM] state_listener: entity=%s old=%s new=%s aux_off=%s machine_start_off=%s",
                 entity,
                 event.data.get("old_state").state if event.data.get("old_state") else "?",
-                val,
+                val, aux_off, machine_start_off,
             )
-            if entity in (entity_id, machine_start_entity) and val == "off":
-                done_event.set()
+            if entity == entity_id and val == "off":
+                aux_off = True
+            elif entity == machine_start_entity and val == "off":
+                machine_start_off = True
             elif entity in fault_sensors and val == "on":
                 fault_detected.append(f"{entity} = on")
+                done_event.set()
+                return
+            if aux_off and machine_start_off:
+                _LOGGER.warning("[CRM] both aux and machine_start are OFF → done")
                 done_event.set()
 
         entities_to_watch = [entity_id, machine_start_entity] + list(fault_sensors)
@@ -449,6 +458,13 @@ class RecipeExecutor:
                 aux.state if aux else "unavailable",
                 ms.state if ms else "unavailable",
             )
+            # Pre-set flags for already-OFF state before listener was registered
+            if aux and aux.state == "off":
+                aux_off = True
+            if ms and ms.state == "off":
+                machine_start_off = True
+            if aux_off and machine_start_off:
+                done_event.set()
 
             # ── Turn the aux switch ON ──────────────────────────────────────
             _LOGGER.warning("[CRM] calling turn_on entity=%s", entity_id)
