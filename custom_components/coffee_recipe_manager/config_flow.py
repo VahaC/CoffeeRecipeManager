@@ -390,16 +390,22 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             step_type = user_input.get("step_type", "drink")
             if step_type == "switch":
-                switch_entity = (user_input.get("switch_entity") or "").strip()
-                if not switch_entity:
-                    errors["switch_entity"] = "switch_entity_required"
-                elif not self.hass.states.get(switch_entity):
-                    errors["switch_entity"] = "entity_not_found"
+                # EntitySelector(multiple=True) always returns a list
+                switch_entities: list[str] = user_input.get("switch_entities") or []
+                if not switch_entities:
+                    errors["switch_entities"] = "switch_entity_required"
                 else:
-                    self._recipe_steps.append({
-                        "switch": switch_entity,
-                        "timeout": int(user_input.get("timeout", 300)),
-                    })
+                    missing = [
+                        e for e in switch_entities
+                        if not self.hass.states.get(e)
+                    ]
+                    if missing:
+                        errors["switch_entities"] = "entity_not_found"
+                    else:
+                        self._recipe_steps.append({
+                            "switches": switch_entities,
+                            "timeout": int(user_input.get("timeout", 300)),
+                        })
             else:
                 self._recipe_steps.append({
                     "drink": user_input["drink"],
@@ -424,8 +430,11 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
             and self._step_index + 1 < len(self._step_prefill)
         )
 
-        # Determine prefill step type
-        is_switch_prefill = "switch" in prefill
+        # Determine prefill step type — handle both old `switch` str and new `switches` list
+        existing_switches = prefill.get("switches") or (
+            [prefill["switch"]] if prefill.get("switch") else []
+        )
+        is_switch_prefill = bool(existing_switches)
         default_step_type = "switch" if is_switch_prefill else "drink"
 
         # Use configured drinks for this machine, fall back to machine entity options
@@ -438,7 +447,6 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
             selector.SelectOptionDict(value=d, label=d) for d in configured_drinks
         ]
         default_drink = prefill.get("drink") or (configured_drinks[0] if configured_drinks else "Espresso")
-        default_switch = prefill.get("switch", "") if is_switch_prefill else ""
 
         schema = vol.Schema({
             vol.Required("step_type", default=default_step_type):
@@ -460,9 +468,12 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
                 ),
             vol.Optional("double", default=bool(prefill.get("double", False))):
                 selector.BooleanSelector(),
-            vol.Optional("switch_entity", default=default_switch):
-                selector.TextSelector(
-                    selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
+            vol.Optional("switch_entities", default=existing_switches):
+                selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="switch",
+                        multiple=True,
+                    )
                 ),
             vol.Optional("timeout", default=int(prefill.get("timeout", 300))):
                 selector.NumberSelector(

@@ -45,6 +45,18 @@ if a step contains a drink not present in the configured `drink_options`.
 
 ---
 
+### ✅ v0.3.2 — Switch entity dropdown + multiple switches per step *(released 2026-02-24)*
+
+- **Entity selector dropdown** — `switch_entities` is now a proper HA entity
+  picker filtered to `switch` domain.
+- **Multiple switches per step** — Select several switches in one step;
+  they execute sequentially with fault monitoring between each one.
+  YAML: `switches: [entity1, entity2]` (old `switch: entity` still works).
+- **Fix raw label names** — `step_type` and `switch_entity` now display
+  their proper translated labels.
+
+---
+
 ### 4. Fault wait timeout (`max_fault_wait`)
 Currently the integration waits forever when a fault occurs.  
 Add configurable `max_fault_wait` (minutes, default: 30).  
@@ -146,3 +158,4 @@ Registered automatically by the integration — no manual resource setup.
 | v0.2.4 | Fix drink name case mismatch, fix `machine_double_switch` not truly optional, add detailed debug logging |
 | v0.3.0 | Direct switch steps in recipes (`switch:` field), completion tracking via start switch instead of work state sensor |
 | v0.3.1 | Switch step type added to the recipe UI (Add / Edit flows) |
+| v0.3.2 | Switch entity dropdown (EntitySelector), multiple switches per step, fix raw label names |

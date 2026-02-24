@@ -209,48 +209,64 @@ class RecipeExecutor:
         timeout = step.get("timeout", DEFAULT_STEP_TIMEOUT)
 
         # ── Switch-only step ────────────────────────────────────────────────
-        # A step can target a specific switch directly (e.g. milkfrothing,
+        # A step can target one or more switches directly (e.g. milkfrothing,
         # hotwaterdispensing, espressoshot) instead of the normal drink flow.
-        if switch_entity:
-            if self.hass.states.get(switch_entity) is None:
-                await self._fail(
-                    f"Switch entity '{switch_entity}' not found. "
-                    f"Check the entity ID in the recipe."
-                )
-                return False
+        # Supports both:
+        #   switch: "entity_id"           (YAML / legacy)
+        #   switches: ["entity1", ...]    (UI / multi-switch)
+        switch_entities: list[str] = []
+        if step.get("switches"):
+            raw = step["switches"]
+            switch_entities = [raw] if isinstance(raw, str) else list(raw)
+        elif switch_entity:
+            switch_entities = [switch_entity]
 
-            while True:
-                if self._abort_event.is_set():
-                    self._set_status(EXECUTOR_IDLE)
-                    return False
-
-                fault = self._get_active_fault()
-                if fault:
-                    cleared = await self._wait_for_fault_clear(fault)
-                    if not cleared:
-                        return False
-                    continue
-
-                self._current_step_drink = switch_entity
-                self._set_status(EXECUTOR_RUNNING)
-                await self.hass.services.async_call(
-                    "switch", "turn_on",
-                    {"entity_id": switch_entity},
-                    blocking=True,
-                )
-
-                result = await self._wait_for_completion(timeout, start_entity=switch_entity)
-
-                if result == "ok":
-                    return True
-                elif result == "retry":
-                    _LOGGER.info(
-                        "Recipe '%s' step %d: fault cleared, restarting switch step",
-                        self._current_recipe, self._current_step,
+        if switch_entities:
+            # Validate all entities before starting
+            for entity_id in switch_entities:
+                if self.hass.states.get(entity_id) is None:
+                    await self._fail(
+                        f"Switch entity '{entity_id}' not found. "
+                        f"Check the entity ID in the recipe."
                     )
-                    continue
-                else:
                     return False
+
+            # Execute each switch in sequence
+            for entity_id in switch_entities:
+                while True:
+                    if self._abort_event.is_set():
+                        self._set_status(EXECUTOR_IDLE)
+                        return False
+
+                    fault = self._get_active_fault()
+                    if fault:
+                        cleared = await self._wait_for_fault_clear(fault)
+                        if not cleared:
+                            return False
+                        continue
+
+                    self._current_step_drink = entity_id
+                    self._set_status(EXECUTOR_RUNNING)
+                    await self.hass.services.async_call(
+                        "switch", "turn_on",
+                        {"entity_id": entity_id},
+                        blocking=True,
+                    )
+
+                    result = await self._wait_for_completion(timeout, start_entity=entity_id)
+
+                    if result == "ok":
+                        break  # next switch in the list
+                    elif result == "retry":
+                        _LOGGER.info(
+                            "Recipe '%s' step %d: fault cleared, restarting switch '%s'",
+                            self._current_recipe, self._current_step, entity_id,
+                        )
+                        continue
+                    else:
+                        return False
+
+            return True
 
         # ── Drink step (default) ────────────────────────────────────────────
         if not drink:

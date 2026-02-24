@@ -84,17 +84,17 @@
       },
       "recipe_step": {
         "title": "Step {step_num} — {recipe_name}",
-        "description": "Choose the step type. **Drink** — select a drink from the machine. **Switch** — activate a switch directly (e.g. milk frothing, hot water, espresso shot).",
+        "description": "**Drink** — select a drink from the machine. **Switch** — activate one or more switches directly (milk frothing, hot water dispensing, espresso shot, etc.).",
         "data": {
           "step_type": "Step type",
-          "drink": "Drink (for Drink steps)",
-          "double": "Double portion (for Drink steps)",
-          "switch_entity": "Switch entity ID (for Switch steps, e.g. switch.coffee_machine_milkfrothing)",
+          "drink": "Drink",
+          "double": "Double portion",
+          "switch_entities": "Switches",
           "timeout": "Timeout (seconds)",
           "add_another": "Add another step after this one"
         },
         "data_description": {
-          "switch_entity": "Full entity ID of the switch to activate, e.g. switch.coffee_machine_milkfrothing"
+          "switch_entities": "Select one or more switches to activate (executed in order). E.g. milk frothing, hot water, espresso shot."
         }
       },
       "recipe_edit_select": {
@@ -122,8 +122,8 @@
     },
     "error": {
       "recipe_save_failed": "Failed to save recipe.",
-      "switch_entity_required": "Switch entity ID is required for Switch steps.",
-      "entity_not_found": "Entity not found. Check the entity ID."
+      "switch_entity_required": "Select at least one switch entity.",
+      "entity_not_found": "One or more selected entities were not found in Home Assistant."
     },
     "abort": {
       "no_recipes": "No recipes found. Add one first.",

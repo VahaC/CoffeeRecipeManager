@@ -4,6 +4,28 @@ All notable changes to Coffee Recipe Manager are documented here.
 
 ---
 
+## [0.3.2] — 2026-02-24
+
+### Improvements
+
+- **Switch entity dropdown in the recipe UI** — The `switch_entities` field in
+  the recipe step form is now a proper **entity selector** (dropdown) rather than
+  a plain text input. Entities are filtered to domain `switch`, so only relevant
+  switches appear in the list.
+
+- **Multiple switches per step** — The switch step now supports selecting
+  **multiple switch entities** from the UI (or via `switches: [...]` in YAML).
+  Switches are executed sequentially within the step, each with full fault
+  monitoring and retry-on-fault-clear. The old single-entity `switch:` field
+  in YAML remains supported for backward compatibility.
+
+- **Fix: raw field labels in the step form** — Field keys `step_type` and
+  `switch_entity` were displayed as raw identifiers instead of their translated
+  labels. Translation strings have been cleaned up and the field renamed to
+  `switch_entities` to match the new multi-select behaviour.
+
+---
+
 ## [0.3.1] — 2026-02-24
 
 ### Improvements

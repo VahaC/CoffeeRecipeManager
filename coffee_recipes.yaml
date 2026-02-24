@@ -15,15 +15,16 @@
 #   timeout: <seconds>          (optional, default: 300)
 #
 # Step options (direct switch step):
-#   switch: <switch entity_id>  (use instead of 'drink' to activate a switch directly)
-#   timeout: <seconds>          (optional, default: 300)
+#   switch: <switch entity_id>       (single switch, YAML shorthand)
+#   switches: [<entity1>, <entity2>] (one or more switches, executed in order)
+#   timeout: <seconds>               (optional, default: 300 — applied per switch)
 #
 # Direct switch examples:
 #   - switch: switch.coffee_machine_milkfrothing
 #     timeout: 60
-#   - switch: switch.coffee_machine_hotwaterdispensing
-#     timeout: 60
-#   - switch: switch.coffee_machine_espressoshot
+#   - switches:
+#       - switch.coffee_machine_milkfrothing
+#       - switch.coffee_machine_espressoshot
 #     timeout: 120
 
 recipes:

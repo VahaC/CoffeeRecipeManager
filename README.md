@@ -104,23 +104,33 @@ recipes:
 | `timeout` | ❌ | `300` | Max seconds to wait for the machine to finish |
 
 #### Direct switch step
-Activates a specific switch entity directly, without going through the drink select flow. Useful for auxiliary machine functions such as milk frothing, hot water dispensing, or raw espresso shot.
+Activates one or more switch entities sequentially, without going through the drink select flow. Useful for auxiliary machine functions such as milk frothing, hot water dispensing, or raw espresso shot.
 
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `switch` | ✅ | — | Full entity ID of the switch to activate |
-| `timeout` | ❌ | `300` | Max seconds to wait for the switch to turn OFF |
+| `switch` | \* | — | Single switch entity ID (YAML shorthand) |
+| `switches` | \* | — | List of switch entity IDs, executed in order |
+| `timeout` | ❌ | `300` | Max seconds to wait **per switch** for it to turn OFF |
 
-Example — froth milk, then pull a manual espresso shot:
+\* Use either `switch` (single) or `switches` (one or more).
+
+Multi-switch example — froth milk, then pull a manual espresso shot in one step:
 ```yaml
 steps:
-  - switch: switch.coffee_machine_milkfrothing
-    timeout: 60
-  - switch: switch.coffee_machine_espressoshot
+  - switches:
+      - switch.coffee_machine_milkfrothing
+      - switch.coffee_machine_espressoshot
     timeout: 120
 ```
 
-Other commonly supported switches:
+Single-switch shorthand:
+```yaml
+steps:
+  - switch: switch.coffee_machine_hotwaterdispensing
+    timeout: 60
+```
+
+Commonly supported switches:
 - `switch.coffee_machine_milkfrothing`
 - `switch.coffee_machine_hotwaterdispensing`
 - `switch.coffee_machine_espressoshot`
