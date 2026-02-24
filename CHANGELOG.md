@@ -4,6 +4,20 @@ All notable changes to Coffee Recipe Manager are documented here.
 
 ---
 
+## [0.3.4] — 2026-02-24
+
+### Bug Fixes
+
+- **Auxiliary switch labels now show friendly names** — The per-switch count
+  fields in the recipe step form (`Switch 0 (×)`, `Switch 1 (×)`, etc.) now
+  display the entity's **friendly name** as a description below each field
+  (e.g. "Coffee Machine Milkfrothing") instead of the anonymous index.
+  The friendly name is taken from `hass.states` at form-render time;
+  if the entity is not yet loaded, the entity ID's last segment is prettified
+  as a fallback.
+
+---
+
 ## [0.3.3] — 2026-02-24
 
 ### Improvements
