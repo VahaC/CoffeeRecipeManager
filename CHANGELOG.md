@@ -4,6 +4,18 @@ All notable changes to Coffee Recipe Manager are documented here.
 
 ---
 
+## [0.3.5] — 2026-02-24
+
+### Bug Fixes
+
+- **Auxiliary switch field labels now show friendly names** — The label
+  of each switch count field (previously `Switch 0 (×)`, `Switch 1 (×)`, etc.)
+  is now the entity's **friendly name** directly, e.g.
+  `Coffee Machine Milkfrothing (×)`. Uses the same `description_placeholders`
+  mechanism as the `data_description` hint below each field.
+
+---
+
 ## [0.3.4] — 2026-02-24
 
 ### Bug Fixes

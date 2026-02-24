@@ -82,6 +82,14 @@ if a step contains a drink not present in the configured `drink_options`.
 
 ---
 
+### ✅ v0.3.5 — Friendly names as field labels *(released 2026-02-24)*
+
+- **Labels renamed to friendly names** — The field label itself (not just the
+  description below) now shows the entity friendly name, e.g.
+  `Coffee Machine Milkfrothing (×)` instead of `Switch 0 (×)`.
+
+---
+
 ### 4. Fault wait timeout (`max_fault_wait`)
 Currently the integration waits forever when a fault occurs.  
 Add configurable `max_fault_wait` (minutes, default: 30).  
@@ -186,3 +194,4 @@ Registered automatically by the integration — no manual resource setup.
 | v0.3.2 | Switch entity dropdown (EntitySelector), multiple switches per step, fix raw label names |
 | v0.3.3 | Recipe step UI redesign: remove Step type, per-switch repeat count, auxiliary switches moved to machine settings |
 | v0.3.4 | Show entity friendly names under auxiliary switch count fields in recipe step form |
+| v0.3.5 | Use friendly names as field labels (not just descriptions) for auxiliary switch count fields |
