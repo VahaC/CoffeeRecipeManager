@@ -111,6 +111,17 @@ if a step contains a drink not present in the configured `drink_options`.
 
 ---
 
+### ✅ v0.3.8 — Fix "Change Drink to None" having no effect *(released 2026-02-24)*
+
+- **Root cause**: `\u2014 None \u2014` drink option used `value=""` (empty string) which HA's
+  `SelectSelector` does not accept — the form silently kept the previous drink,
+  so the recipe was never updated in YAML.
+- **Fix**: sentinel value `"none"` used for the option; handler converts it to
+  absent `drink` field; prefill maps missing drink back to `"none"` so the
+  dropdown shows correctly when re-editing a switch-only step.
+
+---
+
 ### 4. Fault wait timeout (`max_fault_wait`)
 Currently the integration waits forever when a fault occurs.  
 Add configurable `max_fault_wait` (minutes, default: 30).  
@@ -218,3 +229,4 @@ Registered automatically by the integration — no manual resource setup.
 | v0.3.5 | Use friendly names as field labels (not just descriptions) for auxiliary switch count fields |
 | v0.3.6 | Fix View Selected Recipe / get_recipe service to correctly render switch steps and switch_counts format |
 | v0.3.7 | Fix auxiliary switch repeat count: listener now registered before turn_on to prevent missed ON/OFF events |
+| v0.3.8 | Fix "Change Drink to None" having no effect: replace empty-string SelectSelector option with 'none' sentinel |

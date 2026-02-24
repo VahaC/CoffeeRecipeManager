@@ -4,6 +4,21 @@ All notable changes to Coffee Recipe Manager are documented here.
 
 ---
 
+## [0.3.8] — 2026-02-24
+
+### Bug Fixes
+
+- **Fix: changing Drink to “None” in the recipe step UI had no effect** —
+  The `— None —` drink option used `value=""` (empty string) which HA's
+  `SelectSelector` does not accept as a valid submitted value — the form
+  either rejected it or silently substituted the previous selection, so the
+  recipe was never saved to YAML. Fixed by using the sentinel value `"none"`
+  instead. The handler converts `"none"` → no drink field in the saved step.
+  Prefill also maps a missing/empty drink to `"none"` so the dropdown shows
+  `— None —` correctly when re-editing a switch-only step.
+
+---
+
 ## [0.3.7] — 2026-02-24
 
 ### Bug Fixes

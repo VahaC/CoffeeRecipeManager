@@ -408,7 +408,8 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
         )
 
         if user_input is not None:
-            drink = user_input.get("drink", "") or ""
+            raw_drink = user_input.get("drink", "none")
+            drink = "" if (not raw_drink or raw_drink == "none") else raw_drink
             double = bool(user_input.get("double", False))
             timeout = int(user_input.get("timeout", 300))
 
@@ -454,9 +455,9 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
             _get_machine_drink_options(self.hass, current_config.get(CONF_MACHINE_DRINK_SELECT)),
         )
         drink_options = [
-            selector.SelectOptionDict(value="", label="— None —"),
+            selector.SelectOptionDict(value="none", label="— None —"),
         ] + [selector.SelectOptionDict(value=d, label=d) for d in configured_drinks]
-        default_drink = prefill.get("drink", "")
+        default_drink = prefill.get("drink") or "none"
 
         # Prefill switch counts (support old switch/switches format)
         existing_switch_counts: dict[str, int] = {}
