@@ -12,6 +12,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_AUXILIARY_SWITCHES,
     CONF_DRINK_OPTIONS,
     CONF_FAULT_SENSORS,
     CONF_MACHINE_DOUBLE_SWITCH,
@@ -20,6 +21,7 @@ from .const import (
     CONF_MACHINE_WORK_STATE,
     CONF_NOTIFY_SERVICE,
     CONF_RECIPES_FILE,
+    DEFAULT_AUXILIARY_SWITCHES,
     DEFAULT_DOUBLE_SWITCH,
     DEFAULT_DRINK_SELECT,
     DEFAULT_FAULT_SENSORS,
@@ -85,6 +87,12 @@ class CoffeeRecipeManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_MACHINE_DOUBLE_SWITCH,
             ): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="switch")
+            ),
+            vol.Optional(
+                CONF_AUXILIARY_SWITCHES,
+                default=DEFAULT_AUXILIARY_SWITCHES,
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="switch", multiple=True)
             ),
         })
 
@@ -313,6 +321,12 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
                 CONF_NOTIFY_SERVICE,
                 default=current.get(CONF_NOTIFY_SERVICE, "none"),
             ): str,
+            vol.Optional(
+                CONF_AUXILIARY_SWITCHES,
+                default=current.get(CONF_AUXILIARY_SWITCHES, DEFAULT_AUXILIARY_SWITCHES),
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="switch", multiple=True)
+            ),
         })
 
         return self.async_show_form(step_id="machine_settings", data_schema=schema)
@@ -384,34 +398,39 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
     async def async_step_recipe_step(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        """Collect one step (drink or switch), optionally loop for more."""
+        """Collect one step, optionally loop for more."""
         errors: dict[str, str] = {}
 
+        # Resolved auxiliary switch list for this machine config
+        current_config = {**self._config_entry.data, **self._config_entry.options}
+        aux_switches: list[str] = current_config.get(
+            CONF_AUXILIARY_SWITCHES, DEFAULT_AUXILIARY_SWITCHES
+        )
+
         if user_input is not None:
-            step_type = user_input.get("step_type", "drink")
-            if step_type == "switch":
-                # EntitySelector(multiple=True) always returns a list
-                switch_entities: list[str] = user_input.get("switch_entities") or []
-                if not switch_entities:
-                    errors["switch_entities"] = "switch_entity_required"
-                else:
-                    missing = [
-                        e for e in switch_entities
-                        if not self.hass.states.get(e)
-                    ]
-                    if missing:
-                        errors["switch_entities"] = "entity_not_found"
-                    else:
-                        self._recipe_steps.append({
-                            "switches": switch_entities,
-                            "timeout": int(user_input.get("timeout", 300)),
-                        })
+            drink = user_input.get("drink", "") or ""
+            double = bool(user_input.get("double", False))
+            timeout = int(user_input.get("timeout", 300))
+
+            # Collect per-switch counts
+            switch_counts: dict[str, int] = {}
+            for i, entity_id in enumerate(aux_switches):
+                raw = user_input.get(f"switch_count_{i}", 0)
+                count = int(raw) if raw else 0
+                if count > 0:
+                    switch_counts[entity_id] = count
+
+            # At least one action required
+            if not drink and not switch_counts:
+                errors["drink"] = "step_no_action"
             else:
-                self._recipe_steps.append({
-                    "drink": user_input["drink"],
-                    "double": bool(user_input.get("double", False)),
-                    "timeout": int(user_input.get("timeout", 300)),
-                })
+                step: dict = {"timeout": timeout}
+                if drink:
+                    step["drink"] = drink
+                    step["double"] = double
+                if switch_counts:
+                    step["switch_counts"] = switch_counts
+                self._recipe_steps.append(step)
 
             if not errors:
                 self._step_index += 1
@@ -424,42 +443,43 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
         if self._step_prefill and self._step_index < len(self._step_prefill):
             prefill = self._step_prefill[self._step_index]
 
-        # Suggest "add another" if there are more existing steps to walk through
         more_exist = (
             self._step_prefill
             and self._step_index + 1 < len(self._step_prefill)
         )
 
-        # Determine prefill step type — handle both old `switch` str and new `switches` list
-        existing_switches = prefill.get("switches") or (
-            [prefill["switch"]] if prefill.get("switch") else []
-        )
-        is_switch_prefill = bool(existing_switches)
-        default_step_type = "switch" if is_switch_prefill else "drink"
-
-        # Use configured drinks for this machine, fall back to machine entity options
-        current_config = {**self._config_entry.data, **self._config_entry.options}
+        # Prefill drink
         configured_drinks = current_config.get(
             CONF_DRINK_OPTIONS,
             _get_machine_drink_options(self.hass, current_config.get(CONF_MACHINE_DRINK_SELECT)),
         )
         drink_options = [
-            selector.SelectOptionDict(value=d, label=d) for d in configured_drinks
-        ]
-        default_drink = prefill.get("drink") or (configured_drinks[0] if configured_drinks else "Espresso")
+            selector.SelectOptionDict(value="", label="— None —"),
+        ] + [selector.SelectOptionDict(value=d, label=d) for d in configured_drinks]
+        default_drink = prefill.get("drink", "")
 
-        schema = vol.Schema({
-            vol.Required("step_type", default=default_step_type):
-                selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            selector.SelectOptionDict(value="drink", label="Drink"),
-                            selector.SelectOptionDict(value="switch", label="Switch"),
-                        ],
-                        mode=selector.SelectSelectorMode.LIST,
-                    )
-                ),
-            vol.Required("drink", default=default_drink):
+        # Prefill switch counts (support old switch/switches format)
+        existing_switch_counts: dict[str, int] = {}
+        if prefill.get("switch_counts"):
+            existing_switch_counts = dict(prefill["switch_counts"])
+        elif prefill.get("switches"):
+            raw = prefill["switches"]
+            entities = [raw] if isinstance(raw, str) else list(raw)
+            for e in entities:
+                existing_switch_counts[e] = 1
+        elif prefill.get("switch"):
+            existing_switch_counts[prefill["switch"]] = 1
+
+        # Build description placeholders listing each switch
+        placeholder_parts = [
+            f"Switch {i}: {entity_id}"
+            for i, entity_id in enumerate(aux_switches)
+        ]
+        sw_list = " | ".join(placeholder_parts) if placeholder_parts else "No auxiliary switches configured"
+
+        # Build schema dynamically
+        schema_dict: dict = {
+            vol.Optional("drink", default=default_drink):
                 selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=drink_options,
@@ -468,32 +488,40 @@ class CoffeeRecipeManagerOptionsFlow(config_entries.OptionsFlow):
                 ),
             vol.Optional("double", default=bool(prefill.get("double", False))):
                 selector.BooleanSelector(),
-            vol.Optional("switch_entities", default=existing_switches):
-                selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain="switch",
-                        multiple=True,
-                    )
-                ),
-            vol.Optional("timeout", default=int(prefill.get("timeout", 300))):
+        }
+
+        for i, entity_id in enumerate(aux_switches):
+            default_count = existing_switch_counts.get(entity_id, 0)
+            schema_dict[vol.Optional(f"switch_count_{i}", default=int(default_count))] = (
                 selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=10, max=3600, step=10,
-                        unit_of_measurement="s",
+                        min=0, max=10, step=1,
                         mode=selector.NumberSelectorMode.BOX,
                     )
-                ),
-            vol.Optional("add_another", default=bool(more_exist)):
-                selector.BooleanSelector(),
-        })
+                )
+            )
+
+        schema_dict[vol.Optional("timeout", default=int(prefill.get("timeout", 300)))] = (
+            selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=10, max=3600, step=10,
+                    unit_of_measurement="s",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            )
+        )
+        schema_dict[vol.Optional("add_another", default=bool(more_exist))] = (
+            selector.BooleanSelector()
+        )
 
         return self.async_show_form(
             step_id="recipe_step",
-            data_schema=schema,
+            data_schema=vol.Schema(schema_dict),
             errors=errors,
             description_placeholders={
                 "step_num": str(self._step_index + 1),
                 "recipe_name": self._recipe_name,
+                "sw_list": sw_list,
             },
         )
 

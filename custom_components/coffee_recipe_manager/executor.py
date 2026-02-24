@@ -208,22 +208,30 @@ class RecipeExecutor:
         double = step.get("double", False)
         timeout = step.get("timeout", DEFAULT_STEP_TIMEOUT)
 
-        # ── Switch-only step ────────────────────────────────────────────────
-        # A step can target one or more switches directly (e.g. milkfrothing,
-        # hotwaterdispensing, espressoshot) instead of the normal drink flow.
-        # Supports both:
-        #   switch: "entity_id"           (YAML / legacy)
-        #   switches: ["entity1", ...]    (UI / multi-switch)
-        switch_entities: list[str] = []
-        if step.get("switches"):
+        # ── Switch step(s) ──────────────────────────────────────────────────
+        # Supports three formats (newest first):
+        #   switch_counts: {"entity_id": N, ...}  (UI / v0.3.3, per-switch repeat count)
+        #   switches: ["entity1", ...]             (UI / v0.3.2, list, each run once)
+        #   switch: "entity_id"                    (YAML / legacy, single, run once)
+        #
+        # Builds a list of (entity_id, count) pairs, then executes each
+        # entity sequentially the specified number of times.
+        switch_runs: list[tuple[str, int]] = []
+        if step.get("switch_counts"):
+            for entity_id, count in step["switch_counts"].items():
+                n = int(count) if count else 0
+                if n > 0:
+                    switch_runs.append((entity_id, n))
+        elif step.get("switches"):
             raw = step["switches"]
-            switch_entities = [raw] if isinstance(raw, str) else list(raw)
+            entities = [raw] if isinstance(raw, str) else list(raw)
+            switch_runs = [(e, 1) for e in entities]
         elif switch_entity:
-            switch_entities = [switch_entity]
+            switch_runs = [(switch_entity, 1)]
 
-        if switch_entities:
+        if switch_runs:
             # Validate all entities before starting
-            for entity_id in switch_entities:
+            for entity_id, _ in switch_runs:
                 if self.hass.states.get(entity_id) is None:
                     await self._fail(
                         f"Switch entity '{entity_id}' not found. "
@@ -231,46 +239,46 @@ class RecipeExecutor:
                     )
                     return False
 
-            # Execute each switch in sequence
-            for entity_id in switch_entities:
-                while True:
-                    if self._abort_event.is_set():
-                        self._set_status(EXECUTOR_IDLE)
-                        return False
-
-                    fault = self._get_active_fault()
-                    if fault:
-                        cleared = await self._wait_for_fault_clear(fault)
-                        if not cleared:
+            # Execute each switch the required number of times, in sequence
+            for entity_id, count in switch_runs:
+                for run_num in range(count):
+                    while True:
+                        if self._abort_event.is_set():
+                            self._set_status(EXECUTOR_IDLE)
                             return False
-                        continue
 
-                    self._current_step_drink = entity_id
-                    self._set_status(EXECUTOR_RUNNING)
-                    await self.hass.services.async_call(
-                        "switch", "turn_on",
-                        {"entity_id": entity_id},
-                        blocking=True,
-                    )
+                        fault = self._get_active_fault()
+                        if fault:
+                            cleared = await self._wait_for_fault_clear(fault)
+                            if not cleared:
+                                return False
+                            continue
 
-                    result = await self._wait_for_completion(timeout, start_entity=entity_id)
-
-                    if result == "ok":
-                        break  # next switch in the list
-                    elif result == "retry":
-                        _LOGGER.info(
-                            "Recipe '%s' step %d: fault cleared, restarting switch '%s'",
-                            self._current_recipe, self._current_step, entity_id,
+                        self._current_step_drink = entity_id
+                        self._set_status(EXECUTOR_RUNNING)
+                        await self.hass.services.async_call(
+                            "switch", "turn_on",
+                            {"entity_id": entity_id},
+                            blocking=True,
                         )
-                        continue
-                    else:
-                        return False
 
-            return True
+                        result = await self._wait_for_completion(timeout, start_entity=entity_id)
 
-        # ── Drink step (default) ────────────────────────────────────────────
+                        if result == "ok":
+                            break  # next run / next switch
+                        elif result == "retry":
+                            _LOGGER.info(
+                                "Recipe '%s' step %d: fault cleared, restarting switch '%s' (run %d/%d)",
+                                self._current_recipe, self._current_step, entity_id, run_num + 1, count,
+                            )
+                            continue
+                        else:
+                            return False
+
+        # ── Drink step ──────────────────────────────────────────────────────
         if not drink:
-            _LOGGER.warning("Step has no 'drink' or 'switch' field, skipping: %s", step)
+            if not switch_runs:
+                _LOGGER.warning("Step has no 'drink' or switch action, skipping: %s", step)
             return True
 
         # Resolve drink name case-insensitively against the actual select entity options.

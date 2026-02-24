@@ -57,6 +57,22 @@ if a step contains a drink not present in the configured `drink_options`.
 
 ---
 
+### ✅ v0.3.3 — Recipe step UI redesign + auxiliary switch settings *(released 2026-02-24)*
+
+- **Auxiliary switches in machine settings** — Configured once
+  (`auxiliary_switches`) in the initial setup wizard and Machine Settings
+  options. No longer entered per step.
+- **No more Step type selector** — The `Drink` / `Switch` radio removed.
+  Every step form shows: Drink dropdown (with *— None —* to skip), Double
+  toggle, one **× count** number field per configured auxiliary switch
+  (0 = skip, 1–10 = repeat that many times).
+- **Per-switch repeat count** — Each auxiliary switch can be triggered N
+  times per step, each run with full fault monitoring.
+- **Executor `switch_counts` format** — New YAML/storage format
+  `switch_counts: {entity_id: N}`. Old `switch:` and `switches:` still work.
+
+---
+
 ### 4. Fault wait timeout (`max_fault_wait`)
 Currently the integration waits forever when a fault occurs.  
 Add configurable `max_fault_wait` (minutes, default: 30).  
@@ -159,3 +175,4 @@ Registered automatically by the integration — no manual resource setup.
 | v0.3.0 | Direct switch steps in recipes (`switch:` field), completion tracking via start switch instead of work state sensor |
 | v0.3.1 | Switch step type added to the recipe UI (Add / Edit flows) |
 | v0.3.2 | Switch entity dropdown (EntitySelector), multiple switches per step, fix raw label names |
+| v0.3.3 | Recipe step UI redesign: remove Step type, per-switch repeat count, auxiliary switches moved to machine settings |

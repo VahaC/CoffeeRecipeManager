@@ -4,6 +4,35 @@ All notable changes to Coffee Recipe Manager are documented here.
 
 ---
 
+## [0.3.3] — 2026-02-24
+
+### Improvements
+
+- **Auxiliary switches moved to machine settings** — The list of auxiliary
+  switches (milk frothing, hot water dispensing, espresso shot, etc.) is now
+  configured once in **Machine Settings** (and during initial setup), and stored
+  as `auxiliary_switches`. Individual recipe steps automatically show a count
+  field for each configured auxiliary switch.
+
+- **Recipe step UI redesigned** — The `Step type` selector has been removed.
+  Each step now shows:
+  - A **Drink** dropdown (with a `— None —` option to skip the drink action).
+  - A **Double portion** toggle.
+  - One **× count** number field per configured auxiliary switch (0 = skip,
+    1–10 = repeat that many times). This replaces the old multi-entity picker and
+    removes the confusion of the `Step type` toggle.
+  - Steps can have a drink, switches, or both in a single form submission.
+
+- **Per-switch repeat count** — Auxiliary switches can now be run multiple times
+  in a single step (e.g. milk frothing × 2). Each run goes through the full
+  fault-monitoring and retry loop individually.
+
+- **Executor: `switch_counts` format** — Steps saved through the new UI use
+  `switch_counts: {entity_id: N}`. Backward compatibility is kept for the old
+  `switch: "entity_id"` and `switches: [...]` YAML formats.
+
+---
+
 ## [0.3.2] — 2026-02-24
 
 ### Improvements

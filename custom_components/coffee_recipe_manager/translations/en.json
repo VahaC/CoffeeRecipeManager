@@ -8,7 +8,8 @@
           "machine_drink_select": "Drink select entity",
           "machine_start_switch": "Start switch entity",
           "machine_work_state": "Work state sensor entity",
-          "machine_double_switch": "Double shot switch (optional)"
+          "machine_double_switch": "Double shot switch (optional)",
+          "auxiliary_switches": "Auxiliary switches (milk, hot water, espresso)"
         }
       },
       "drinks": {
@@ -56,7 +57,8 @@
           "machine_work_state": "Work state sensor entity",
           "machine_double_switch": "Double shot switch",
           "fault_sensors": "Fault sensors",
-          "notify_service": "Mobile notification service (or 'none')"
+          "notify_service": "Mobile notification service (or 'none')",
+          "auxiliary_switches": "Auxiliary switches (milk, hot water, espresso)"
         }
       },
       "machine_drinks": {
@@ -84,17 +86,22 @@
       },
       "recipe_step": {
         "title": "Step {step_num} — {recipe_name}",
-        "description": "**Drink** — select a drink from the machine. **Switch** — activate one or more switches directly (milk frothing, hot water dispensing, espresso shot, etc.).",
+        "description": "Select a **Drink** (or leave as *— None —* to skip) and set how many times each auxiliary switch should run (0 = skip).\n\nConfigured switches: {sw_list}",
         "data": {
-          "step_type": "Step type",
           "drink": "Drink",
           "double": "Double portion",
-          "switch_entities": "Switches",
+          "switch_count_0": "Switch 0 (×)",
+          "switch_count_1": "Switch 1 (×)",
+          "switch_count_2": "Switch 2 (×)",
+          "switch_count_3": "Switch 3 (×)",
+          "switch_count_4": "Switch 4 (×)",
+          "switch_count_5": "Switch 5 (×)",
+          "switch_count_6": "Switch 6 (×)",
+          "switch_count_7": "Switch 7 (×)",
+          "switch_count_8": "Switch 8 (×)",
+          "switch_count_9": "Switch 9 (×)",
           "timeout": "Timeout (seconds)",
           "add_another": "Add another step after this one"
-        },
-        "data_description": {
-          "switch_entities": "Select one or more switches to activate (executed in order). E.g. milk frothing, hot water, espresso shot."
         }
       },
       "recipe_edit_select": {
@@ -123,7 +130,8 @@
     "error": {
       "recipe_save_failed": "Failed to save recipe.",
       "switch_entity_required": "Select at least one switch entity.",
-      "entity_not_found": "One or more selected entities were not found in Home Assistant."
+      "entity_not_found": "One or more selected entities were not found in Home Assistant.",
+      "step_no_action": "At least one action is required: select a drink or set a switch count ≥ 1."
     },
     "abort": {
       "no_recipes": "No recipes found. Add one first.",

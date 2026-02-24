@@ -1,7 +1,7 @@
 """Constants for Coffee Recipe Manager."""
 
 DOMAIN = "coffee_recipe_manager"
-VERSION = "0.3.2"
+VERSION = "0.3.3"
 
 # Config keys
 CONF_MACHINE_DRINK_SELECT = "machine_drink_select"
@@ -12,6 +12,7 @@ CONF_FAULT_SENSORS = "fault_sensors"
 CONF_NOTIFY_SERVICE = "notify_service"
 CONF_RECIPES_FILE = "recipes_file"
 CONF_DRINK_OPTIONS = "drink_options"
+CONF_AUXILIARY_SWITCHES = "auxiliary_switches"
 
 # Defaults
 DEFAULT_DRINK_SELECT = "select.coffee_machine_drink_set"
@@ -22,6 +23,12 @@ DEFAULT_STANDBY_STATE = "standby"
 DEFAULT_STEP_TIMEOUT = 300  # seconds
 DEFAULT_START_TIMEOUT = 30  # seconds to wait for machine to leave standby after start command
 DEFAULT_RECIPES_FILE = "coffee_recipes.yaml"
+
+DEFAULT_AUXILIARY_SWITCHES: list[str] = [
+    "switch.coffee_machine_milkfrothing",
+    "switch.coffee_machine_hotwaterdispensing",
+    "switch.coffee_machine_espressoshot",
+]
 
 DEFAULT_FAULT_SENSORS = [
     "binary_sensor.coffee_machine_fault_water_empty",

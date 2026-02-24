@@ -12,11 +12,19 @@ from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
-STEP_SCHEMA = vol.Schema({
-    vol.Required("drink"): str,
-    vol.Optional("double", default=False): bool,
-    vol.Optional("timeout", default=300): vol.All(int, vol.Range(min=10, max=3600)),
-})
+STEP_SCHEMA = vol.Schema(
+    {
+        vol.Optional("drink"): vol.Any(str, None),
+        vol.Optional("double", default=False): bool,
+        vol.Optional("timeout", default=300): vol.All(int, vol.Range(min=10, max=3600)),
+        # v0.3.3: per-switch repeat counts  {entity_id: N}
+        vol.Optional("switch_counts"): {str: vol.All(int, vol.Range(min=0, max=10))},
+        # Legacy formats (v0.3.0–v0.3.2), kept for backward compatibility
+        vol.Optional("switch"): str,
+        vol.Optional("switches"): vol.Any(str, [str]),
+    },
+    extra=vol.ALLOW_EXTRA,
+)
 
 RECIPE_SCHEMA = vol.Schema({
     vol.Required("name"): str,
