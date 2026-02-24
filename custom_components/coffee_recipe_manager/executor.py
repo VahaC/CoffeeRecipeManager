@@ -298,10 +298,10 @@ class RecipeExecutor:
                         # _run_switch_once already waited for full completion
                         # (both aux+machine_start ON→OFF), so just a short settle pause.
                         _LOGGER.warning(
-                            "[CRM] inter-run settle 3s before run %d/%d entity=%s",
+                            "[CRM] inter-run settle 5s before run %d/%d entity=%s",
                             run_num + 2, count, entity_id,
                         )
-                        await asyncio.sleep(3)
+                        await asyncio.sleep(5)
 
                 _LOGGER.warning(
                     "[CRM] switch loop END: entity=%s all %d runs complete",

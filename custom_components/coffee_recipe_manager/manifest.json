@@ -1,7 +1,7 @@
 {
   "domain": "coffee_recipe_manager",
   "name": "Coffee Recipe Manager",
-  "version": "0.3.14",
+  "version": "0.3.15",
   "documentation": "https://github.com/vahac/coffee-recipe-manager",
   "issue_tracker": "https://github.com/vahac/coffee-recipe-manager/issues",
   "dependencies": [],
