@@ -21,7 +21,7 @@ def _format_step(i: int, step: dict, hass=None) -> str:
 
     # Drink
     drink = step.get("drink")
-    if drink:
+    if drink and drink.lower() != "none":
         double = " (double)" if step.get("double") else ""
         parts.append(f"☕ {drink}{double}")
 
@@ -68,6 +68,7 @@ async def async_setup_entry(
         CoffeeBrewButton(entry, hass, executor, storage),
         CoffeeAbortButton(entry, executor),
         CoffeeViewRecipeButton(entry, hass, storage),
+        CoffeeEditRecipeButton(entry, hass),
     ])
 
 
@@ -178,6 +179,45 @@ class CoffeeViewRecipeButton(ButtonEntity):
                 "title": f"Recipe: {recipe['name']}",
                 "message": msg,
                 "notification_id": f"{DOMAIN}_view",
+            },
+        )
+
+    @property
+    def device_info(self) -> dict:
+        return {
+            "identifiers": {(DOMAIN, self._entry.entry_id)},
+            "name": "Coffee Recipe Manager",
+            "manufacturer": "VahaC",
+            "model": "Recipe Manager",
+        }
+
+
+# ---------------------------------------------------------------------------
+
+class CoffeeEditRecipeButton(ButtonEntity):
+    """Button that sends a persistent notification with a link to the recipe editor."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Edit Recipes"
+    _attr_icon = "mdi:pencil-box"
+
+    def __init__(self, entry: ConfigEntry, hass: HomeAssistant) -> None:
+        self._entry = entry
+        self._hass = hass
+        self._attr_unique_id = f"{entry.entry_id}_edit_recipe_button"
+
+    async def async_press(self) -> None:
+        """Create a notification with a deep-link to the integration's config page."""
+        path = f"/config/integrations/integration/{DOMAIN}"
+        await self._hass.services.async_call(
+            "persistent_notification", "create",
+            {
+                "title": "Coffee Recipe Manager",
+                "message": (
+                    "Tap the link below to open the recipe editor:\n\n"
+                    f"[✏️ Open Recipe Editor]({path})"
+                ),
+                "notification_id": f"{DOMAIN}_edit_shortcut",
             },
         )
 

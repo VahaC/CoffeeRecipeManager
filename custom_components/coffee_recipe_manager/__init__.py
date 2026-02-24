@@ -229,10 +229,18 @@ def _register_services(hass: HomeAssistant) -> None:
         else:
             lines = []
             for key, data in recipes.items():
-                steps_summary = ", ".join(
-                    f"{s['drink']}{'×2' if s.get('double') else ''}"
-                    for s in data.get("steps", [])
-                )
+                def _step_summary(s: dict) -> str:
+                    parts = []
+                    drink = s.get("drink")
+                    if drink and drink.lower() != "none":
+                        parts.append(f"{drink}{'×2' if s.get('double') else ''}")
+                    for eid, cnt in (s.get("switch_counts") or {}).items():
+                        cnt = int(cnt) if cnt else 0
+                        if cnt > 0:
+                            name = eid.split(".")[-1].replace("_", " ").title()
+                            parts.append(f"{name} ×{cnt}")
+                    return ", ".join(parts) if parts else "(empty step)"
+                steps_summary = ", ".join(_step_summary(s) for s in data.get("steps", []))
                 lines.append(f"**{data['name']}** (`{key}`)  \n{steps_summary}")
             msg = "\n\n".join(lines)
         await hass.services.async_call(
@@ -264,7 +272,7 @@ def _register_services(hass: HomeAssistant) -> None:
             def _fmt_step(i: int, step: dict) -> str:
                 parts: list[str] = []
                 drink = step.get("drink")
-                if drink:
+                if drink and drink.lower() != "none":
                     double = " (double)" if step.get("double") else ""
                     parts.append(f"☕ {drink}{double}")
                 switch_counts: dict = step.get("switch_counts") or {}

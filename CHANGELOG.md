@@ -4,6 +4,38 @@ All notable changes to Coffee Recipe Manager are documented here.
 
 ---
 
+## [0.3.17] — 2026-02-24
+
+### Added
+
+- **Edit Recipes button** (`button.coffee_recipe_edit_recipes`) — pressing this button
+  from the device Controls card sends a persistent HA notification that contains a
+  clickable deep-link directly to the integration’s configuration page
+  (`/config/integrations/integration/coffee_recipe_manager`). From there you can
+  add, edit or delete recipes in one tap without navigating away from the dashboard
+  manually.
+
+  For dashboards that support Lovelace navigate actions, a zero-backend alternative
+  is documented in the README:
+  ```yaml
+  type: button
+  name: Edit Recipes
+  icon: mdi:pencil-box
+  tap_action:
+    action: navigate
+    navigation_path: /config/integrations/integration/coffee_recipe_manager
+  ```
+
+### Fixed
+
+- **Recipe display: `drink: none` no longer shown as \u201c☕ none\u201d** — steps where the drink
+  field is set to the sentinel value `none` (switch-only steps) now render without
+  a drink line in both the *View Selected Recipe* notification and the `get_recipe`
+  service output. The `list_recipes` service no longer raises `KeyError` on
+  switch-only steps.
+
+---
+
 ## [0.3.16] — 2026-02-24
 
 ### Fixed

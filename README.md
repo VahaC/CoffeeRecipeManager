@@ -215,6 +215,7 @@ automation:
 | `select.coffee_recipe_select_recipe` | Dropdown to pick which recipe to brew |
 | `button.coffee_recipe_brew_selected_recipe` | Brew the currently selected recipe |
 | `button.coffee_recipe_view_selected_recipe` | Show selected recipe details in a notification |
+| `button.coffee_recipe_edit_recipes` | Send a notification with a link to the recipe editor |
 | `button.coffee_recipe_abort_recipe` | Abort the current recipe |
 
 ### Status sensor attributes
@@ -253,6 +254,31 @@ condition:
       {{ (now() - state_attr('sensor.coffee_recipe_manager_recipe_status', 'last_completed_at') | as_datetime)
          .total_seconds() > 1800 }}
 ```
+
+## Dashboard Quick-Access
+
+Want to open the recipe editor without leaving your dashboard?
+
+### Option A — Edit Recipes button (built-in)
+
+Press the **Edit Recipes** button (`button.coffee_recipe_edit_recipes`) from the device Controls card. It sends a persistent notification in HA with a **clickable link** that takes you directly to the integration's configuration page where you can add, edit or delete recipes.
+
+### Option B — Lovelace navigate card (no notification)
+
+Add a button card to any dashboard that navigates directly to the recipe editor with a single tap:
+
+```yaml
+type: button
+name: Edit Recipes
+icon: mdi:pencil-box
+tap_action:
+  action: navigate
+  navigation_path: /config/integrations/integration/coffee_recipe_manager
+```
+
+This card requires no integration changes — paste it anywhere in your Lovelace YAML.
+
+---
 
 ## Fault Handling
 
