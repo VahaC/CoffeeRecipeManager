@@ -537,9 +537,14 @@ class RecipeExecutor:
                 )
 
             # ── Stage 2: wait for switch OFF ─────────────────────────────────
+            # Stage 2 uses timeout + a fixed buffer so that a machine that takes
+            # exactly `timeout` seconds to finish does not race against asyncio.wait.
+            # The user-visible timeout still governs expectations; the buffer is silent.
+            _SWITCH_STAGE2_BUFFER = 10
+            stage2_timeout = timeout + _SWITCH_STAGE2_BUFFER
             _LOGGER.warning(
-                "[CRM] Stage 2: waiting up to %ds for switch OFF entity=%s done_event_already=%s",
-                timeout, entity_id, done_event.is_set(),
+                "[CRM] Stage 2: waiting up to %ds (%ds + %ds buffer) for switch OFF entity=%s done_event_already=%s",
+                stage2_timeout, timeout, _SWITCH_STAGE2_BUFFER, entity_id, done_event.is_set(),
             )
 
             # If the switch already went OFF during Stage 1 processing above
@@ -552,14 +557,14 @@ class RecipeExecutor:
 
             done_s2, pending = await asyncio.wait(
                 [abort_task, done_task],
-                timeout=timeout,
+                timeout=stage2_timeout,
                 return_when=asyncio.FIRST_COMPLETED,
             )
             for t in pending:
                 t.cancel()
 
             if not done_s2:
-                await self._fail(f"Timeout after {timeout}s waiting for switch '{entity_id}' to finish")
+                await self._fail(f"Timeout after {stage2_timeout}s waiting for switch '{entity_id}' to finish")
                 return "timeout"
 
             if self._abort_event.is_set():
