@@ -4,7 +4,112 @@ All notable changes to Coffee Recipe Manager are documented here.
 
 ---
 
-## [0.3.9] — 2026-02-24
+## [0.3.16] — 2026-02-24
+
+### Fixed
+
+- **Auxiliary switch repeat count now executes correctly for all switch types** —
+  This release resolves the complete chain of issues that prevented `switch_counts`
+  from reliably activating a switch more than once (e.g. `hotwaterdispensing: 2`).
+
+  **Root causes identified and fixed:**
+
+  1. *Race condition on fast/momentary switches* — momentary switches complete an
+     ON→OFF cycle in under a second. If the state-change listener was registered
+     after `turn_on` was called, both events were missed and only the first of N
+     runs ever succeeded.  
+     **Fix (v0.3.7):** `_run_switch_once` helper registers the listener *before*
+     calling `turn_on`.
+
+  2. *Inter-run sleep too short* — a fixed 1-second pause between repeat runs was
+     shorter than the actual machine cycle, so subsequent `turn_on` commands were
+     ignored.  
+     **Fix (v0.3.9 → v0.3.15):** inter-run pause increased progressively; final
+     value is a fixed **5-second settle pause** to ensure the machine is fully
+     ready before the next activation.
+
+  3. *Wrong completion signal* — originally the code waited only for the aux switch
+     itself to go OFF. For machines that keep the aux switch ON during operation and
+     signal completion via `machine_start_switch`, this never fired.  
+     **Fix (v0.3.12):** completion is now detected by watching `machine_start_switch`.
+
+  4. *False completion on idle state* — if both `aux` and `machine_start_switch`
+     were already OFF when the step started (idle state), the done-event fired
+     immediately before `turn_on`, causing the run to return `"ok"` without
+     activating the machine.  
+     **Fix (v0.3.14):** state tracking uses an `"unknown" → "on" → "done"` model.
+     Only an observed ON→OFF transition counts as completion; idle-OFF at startup is
+     ignored.
+
+  5. *Single-entity done condition* — using EITHER aux OR machine_start going OFF as
+     the completion signal led to spurious completions if one entity reset before the
+     machine cycle was fully done.  
+     **Fix (v0.3.13):** done-event fires only when **both** `aux_switch` AND
+     `machine_start_switch` have completed an ON→OFF transition.
+
+- **Diagnostic `[CRM]` log statements demoted from WARNING to DEBUG** — temporary
+  warning-level diagnostic logs added in v0.3.10 for troubleshooting are now at
+  DEBUG level and will no longer appear in default HA logs.
+
+---
+
+## [0.3.15] — 2026-02-24 *(beta)*
+
+### Changed
+- Inter-run settle pause between `switch_counts` repeat runs increased from 3s to **5s**.
+
+---
+
+## [0.3.14] — 2026-02-24 *(beta)*
+
+### Fixed
+- Auxiliary switch repeat runs returned immediately without activating the machine
+  when both `aux_switch` and `machine_start_switch` were already OFF at step start
+  (idle state). Fixed by tracking state as `unknown → on → done`; only an
+  observed ON→OFF transition marks an entity as complete.
+- Inter-run settle pause changed from `max(1, timeout - elapsed)` to a fixed 3s.
+
+---
+
+## [0.3.13] — 2026-02-24 *(beta)*
+
+### Fixed
+- Done-event fired as soon as *either* `aux_switch` or `machine_start_switch` went OFF,
+  causing early completion. Fixed to require *both* entities to complete an ON→OFF
+  transition before signalling done.
+
+---
+
+## [0.3.12] — 2026-02-24 *(beta)*
+
+### Fixed
+- `_run_switch_once` completion logic rewritten to watch `machine_start_switch`
+  (the machine's own cycle-complete signal) instead of relying solely on the aux
+  switch state, which may stay ON throughout the operation.
+- `_wait_for_completion` updated with the same Stage 1 (5s min) / Stage 2 (timeout)
+  two-phase wait logic for consistency.
+
+---
+
+## [0.3.11] — 2026-02-24 *(beta)*
+
+### Fixed
+- Stage 2 timeout increased by a 10-second buffer over the recipe's `timeout` value
+  to prevent a race condition where the machine kept the aux switch ON for exactly
+  `timeout` seconds.
+
+---
+
+## [0.3.10] — 2026-02-24 *(beta)*
+
+### Added
+- Temporary `[CRM]` WARNING-level diagnostic log statements added throughout the
+  auxiliary switch repeat execution path to collect detailed timing and state data
+  from live runs.
+
+---
+
+## [0.3.9] — 2026-02-24 *(beta)*
 
 ### Fixed
 - **Auxiliary switch: second (and subsequent) repeat runs not executing** —
