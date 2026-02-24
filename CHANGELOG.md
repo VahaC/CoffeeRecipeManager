@@ -4,6 +4,21 @@ All notable changes to Coffee Recipe Manager are documented here.
 
 ---
 
+## [0.3.6] — 2026-02-24
+
+### Bug Fixes
+
+- **View Selected Recipe + `get_recipe` service show all step types** —
+  Previously the notification only rendered drink steps and would crash
+  (`KeyError: 'drink'`) on switch-only steps. Now all formats are supported:
+  - `switch_counts: {entity_id: N}` — shows the entity friendly name + repeat
+    count (e.g. *Coffee Machine Milkfrothing ×1*)
+  - Legacy `switches: [...]` and `switch: entity_id` formats
+  - Combined drink + switch steps in one step
+  Friendly names are resolved from `hass.states` at render time.
+
+---
+
 ## [0.3.5] — 2026-02-24
 
 ### Bug Fixes

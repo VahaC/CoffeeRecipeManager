@@ -255,13 +255,41 @@ def _register_services(hass: HomeAssistant) -> None:
         if not recipe:
             msg = f"Recipe `{key}` not found.\n\nAvailable keys: {', '.join(f'`{k}`' for k in storage.recipes)}"
         else:
-            import yaml as _yaml
-            steps_yaml = _yaml.dump(recipe.get("steps", []), allow_unicode=True, default_flow_style=False)
-            msg = (
-                f"**{recipe['name']}** (`{key}`)\n"
-                f"{recipe.get('description', '')}\n\n"
-                f"```yaml\n{steps_yaml}```"
-            )
+            def _switch_name(entity_id: str) -> str:
+                state = hass.states.get(entity_id)
+                if state and state.name:
+                    return state.name
+                return entity_id.split(".")[-1].replace("_", " ").title()
+
+            def _fmt_step(i: int, step: dict) -> str:
+                parts: list[str] = []
+                drink = step.get("drink")
+                if drink:
+                    double = " (double)" if step.get("double") else ""
+                    parts.append(f"☕ {drink}{double}")
+                switch_counts: dict = step.get("switch_counts") or {}
+                if switch_counts:
+                    for eid, count in switch_counts.items():
+                        count = int(count) if count else 0
+                        if count > 0:
+                            parts.append(f"⇄ {_switch_name(eid)} ×{count}")
+                elif step.get("switches"):
+                    raw = step["switches"]
+                    for eid in ([raw] if isinstance(raw, str) else list(raw)):
+                        parts.append(f"⇄ {_switch_name(eid)}")
+                elif step.get("switch"):
+                    parts.append(f"⇄ {_switch_name(step['switch'])}")
+                timeout = step.get("timeout", 300)
+                content = ", ".join(parts) if parts else "(empty)"
+                return f"{i}. {content} — {timeout}s"
+
+            steps = recipe.get("steps", [])
+            lines = [_fmt_step(i, s) for i, s in enumerate(steps, 1)]
+            description = recipe.get("description", "")
+            msg = f"### {recipe['name']} (`{key}`)\n"
+            if description:
+                msg += f"*{description}*\n\n"
+            msg += "\n".join(lines)
         await hass.services.async_call(
             "persistent_notification", "create",
             {

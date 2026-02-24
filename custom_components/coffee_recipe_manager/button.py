@@ -15,6 +15,47 @@ from .storage import RecipeStorage
 _LOGGER = logging.getLogger(__name__)
 
 
+def _format_step(i: int, step: dict, hass=None) -> str:
+    """Return a human-readable line for one recipe step."""
+    parts: list[str] = []
+
+    # Drink
+    drink = step.get("drink")
+    if drink:
+        double = " (double)" if step.get("double") else ""
+        parts.append(f"☕ {drink}{double}")
+
+    def _switch_name(entity_id: str) -> str:
+        if hass:
+            state = hass.states.get(entity_id)
+            if state and state.name:
+                return state.name
+        return entity_id.split(".")[-1].replace("_", " ").title()
+
+    # switch_counts (v0.3.3+ format)
+    switch_counts: dict = step.get("switch_counts") or {}
+    if switch_counts:
+        for entity_id, count in switch_counts.items():
+            count = int(count) if count else 0
+            if count <= 0:
+                continue
+            times = f"×{count}"
+            parts.append(f"⇄ {_switch_name(entity_id)} {times}")
+    # Legacy: switches list
+    elif step.get("switches"):
+        raw = step["switches"]
+        entities = [raw] if isinstance(raw, str) else list(raw)
+        for entity_id in entities:
+            parts.append(f"⇄ {_switch_name(entity_id)}")
+    # Legacy: single switch
+    elif step.get("switch"):
+        parts.append(f"⇄ {_switch_name(step['switch'])}")
+
+    timeout = step.get("timeout", 300)
+    content = ", ".join(parts) if parts else "(empty step)"
+    return f"{i}. {content} — {timeout}s"
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -123,11 +164,7 @@ class CoffeeViewRecipeButton(ButtonEntity):
             return
 
         steps = recipe.get("steps", [])
-        lines = []
-        for i, step in enumerate(steps, 1):
-            double = " (double)" if step.get("double") else ""
-            timeout = step.get("timeout", 300)
-            lines.append(f"{i}. **{step['drink']}**{double} — timeout: {timeout}s")
+        lines = [_format_step(i, step, self._hass) for i, step in enumerate(steps, 1)]
 
         description = recipe.get("description", "")
         msg = f"### {recipe['name']}\n"

@@ -90,6 +90,15 @@ if a step contains a drink not present in the configured `drink_options`.
 
 ---
 
+### ✅ v0.3.6 — Fix View Selected Recipe for all step types *(released 2026-02-24)*
+
+- **View Selected Recipe button and `get_recipe` service** now correctly render
+  all step types: drink steps, `switch_counts` (new format), legacy `switches`
+  list, legacy `switch` single entity, and combined drink + switch steps.
+  Friendly names resolved from `hass.states`. Previously crashed on non-drink steps.
+
+---
+
 ### 4. Fault wait timeout (`max_fault_wait`)
 Currently the integration waits forever when a fault occurs.  
 Add configurable `max_fault_wait` (minutes, default: 30).  
@@ -195,3 +204,4 @@ Registered automatically by the integration — no manual resource setup.
 | v0.3.3 | Recipe step UI redesign: remove Step type, per-switch repeat count, auxiliary switches moved to machine settings |
 | v0.3.4 | Show entity friendly names under auxiliary switch count fields in recipe step form |
 | v0.3.5 | Use friendly names as field labels (not just descriptions) for auxiliary switch count fields |
+| v0.3.6 | Fix View Selected Recipe / get_recipe service to correctly render switch steps and switch_counts format |
