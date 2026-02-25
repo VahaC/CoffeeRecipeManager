@@ -229,6 +229,83 @@ class RecipeExecutor:
         elif switch_entity:
             switch_runs = [(switch_entity, 1)]
 
+        # ── Drink step first ────────────────────────────────────────────────
+        if drink:
+            # Resolve drink name case-insensitively against the actual select entity options.
+            # This tolerates minor capitalisation differences in recipes (e.g. "Hotmilk" vs "HotMilk").
+            drink_entity = self.config["machine_drink_select"]
+            drink = self._resolve_drink_option(drink, drink_entity)
+            if drink is None:
+                await self._fail(
+                    f"Drink '{step.get('drink')}' not found in select entity '{drink_entity}'. "
+                    f"Valid options: {self._get_drink_options(drink_entity)}"
+                )
+                return False
+
+            while True:
+                if self._abort_event.is_set():
+                    self._set_status(EXECUTOR_IDLE)
+                    return False
+
+                # 1. Check faults BEFORE starting — wait until cleared
+                fault = self._get_active_fault()
+                if fault:
+                    cleared = await self._wait_for_fault_clear(fault)
+                    if not cleared:
+                        return False
+                    continue
+
+                # 2. Select drink
+                self._current_step_drink = drink
+                self._set_status(EXECUTOR_RUNNING)
+                await self.hass.services.async_call(
+                    "select", "select_option",
+                    {"entity_id": drink_entity, "option": drink},
+                    blocking=True,
+                )
+
+                # 3. Set double if needed
+                double_entity = self.config.get("machine_double_switch")
+                if double_entity:
+                    if self.hass.states.get(double_entity) is None:
+                        _LOGGER.warning(
+                            "Double switch entity '%s' not found — skipping double setting",
+                            double_entity,
+                        )
+                    else:
+                        service = "turn_on" if double else "turn_off"
+                        await self.hass.services.async_call(
+                            "switch", service,
+                            {"entity_id": double_entity},
+                            blocking=True,
+                        )
+
+                # Small delay to let machine accept settings
+                await asyncio.sleep(2)
+
+                # 4. Start
+                start_entity = self.config["machine_start_switch"]
+                await self.hass.services.async_call(
+                    "switch", "turn_on",
+                    {"entity_id": start_entity},
+                    blocking=True,
+                )
+
+                # 5. Wait for standby OR fault OR abort
+                result = await self._wait_for_completion(timeout)
+
+                if result == "ok":
+                    break  # drink done, proceed to switch steps
+                elif result == "retry":
+                    _LOGGER.info(
+                        "Recipe '%s' step %d: fault cleared, restarting step",
+                        self._current_recipe, self._current_step,
+                    )
+                    continue
+                else:  # "abort" or "timeout"
+                    return False
+
+        # ── Switch step(s) after drink ───────────────────────────────────────
         if switch_runs:
             # Validate all entities before starting
             for entity_id, _ in switch_runs:
@@ -308,85 +385,10 @@ class RecipeExecutor:
                     entity_id, count,
                 )
 
-        # ── Drink step ──────────────────────────────────────────────────────
-        if not drink:
-            if not switch_runs:
-                _LOGGER.warning("Step has no 'drink' or switch action, skipping: %s", step)
-            return True
+        if not drink and not switch_runs:
+            _LOGGER.warning("Step has no 'drink' or switch action, skipping: %s", step)
 
-        # Resolve drink name case-insensitively against the actual select entity options.
-        # This tolerates minor capitalisation differences in recipes (e.g. "Hotmilk" vs "HotMilk").
-        drink_entity = self.config["machine_drink_select"]
-        drink = self._resolve_drink_option(drink, drink_entity)
-        if drink is None:
-            await self._fail(
-                f"Drink '{step.get('drink')}' not found in select entity '{drink_entity}'. "
-                f"Valid options: {self._get_drink_options(drink_entity)}"
-            )
-            return False
-
-        while True:
-            if self._abort_event.is_set():
-                self._set_status(EXECUTOR_IDLE)
-                return False
-
-            # 1. Check faults BEFORE starting — wait until cleared
-            fault = self._get_active_fault()
-            if fault:
-                cleared = await self._wait_for_fault_clear(fault)
-                if not cleared:
-                    return False
-                continue
-
-            # 2. Select drink
-            self._current_step_drink = drink
-            self._set_status(EXECUTOR_RUNNING)
-            await self.hass.services.async_call(
-                "select", "select_option",
-                {"entity_id": drink_entity, "option": drink},
-                blocking=True,
-            )
-
-            # 3. Set double if needed
-            double_entity = self.config.get("machine_double_switch")
-            if double_entity:
-                if self.hass.states.get(double_entity) is None:
-                    _LOGGER.warning(
-                        "Double switch entity '%s' not found — skipping double setting",
-                        double_entity,
-                    )
-                else:
-                    service = "turn_on" if double else "turn_off"
-                    await self.hass.services.async_call(
-                        "switch", service,
-                        {"entity_id": double_entity},
-                        blocking=True,
-                    )
-
-            # Small delay to let machine accept settings
-            await asyncio.sleep(1)
-
-            # 4. Start
-            start_entity = self.config["machine_start_switch"]
-            await self.hass.services.async_call(
-                "switch", "turn_on",
-                {"entity_id": start_entity},
-                blocking=True,
-            )
-
-            # 5. Wait for standby OR fault OR abort
-            result = await self._wait_for_completion(timeout)
-
-            if result == "ok":
-                return True
-            elif result == "retry":
-                _LOGGER.info(
-                    "Recipe '%s' step %d: fault cleared, restarting step",
-                    self._current_recipe, self._current_step,
-                )
-                continue
-            else:  # "abort" or "timeout"
-                return False
+        return True
 
     async def _run_switch_once(self, entity_id: str, timeout: int) -> str:
         """

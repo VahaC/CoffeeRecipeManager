@@ -4,6 +4,24 @@ All notable changes to Coffee Recipe Manager are documented here.
 
 ---
 
+## [0.3.18] — 2026-02-25
+
+### Fixed
+
+- **Drink is now brewed before auxiliary switch actions in a combined step** —
+  Previously, when a recipe step contained both a `drink` and `switch_counts`
+  (or `switches` / `switch`) fields, the auxiliary switch actions were executed
+  first and only then the main drink was brewed. This caused incorrect behaviour
+  for recipes such as `CaffeLatte + Double Hotmilk`, where hot-milk frothing ran
+  before the espresso shot.
+
+  The execution order inside `_execute_step` has been corrected: the drink is
+  always brewed first (select option → set double → start → wait for completion),
+  and only after a successful completion are the switch steps executed in sequence.
+  Fault handling and abort support are preserved for both phases.
+
+---
+
 ## [0.3.17] — 2026-02-24
 
 ### Added
