@@ -4,6 +4,18 @@ All notable changes to Coffee Recipe Manager are documented here.
 
 ---
 
+## [0.3.20] — 2026-03-05
+
+### Added
+
+- **Error reason in activity log** — when the recipe status changes to `error`, Home
+  Assistant's logbook now shows a second entry right beneath the state change with the
+  full reason (e.g. *"recipe 'CaffeLatte' failed at step 2: Timeout after 300 s
+  waiting for machine to finish"*). Implemented via a new `logbook.py` platform that
+  describes the existing `coffee_recipe_manager_recipe_failed` bus event.
+
+---
+
 ## [0.3.19] — 2026-03-04
 
 ### Added
