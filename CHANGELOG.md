@@ -4,6 +4,15 @@ All notable changes to Coffee Recipe Manager are documented here.
 
 ---
 
+## [0.3.19] — 2026-03-04
+
+### Added
+
+- **Brand logo images** — added `logo.png` and `logo@2x.png` to the brand folder,
+  generated from the existing integration icons to satisfy HACS branding requirements.
+
+---
+
 ## [0.3.18] — 2026-02-25
 
 ### Fixed
